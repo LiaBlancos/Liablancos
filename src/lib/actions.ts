@@ -251,9 +251,24 @@ export async function getSettings() {
 
     if (error) {
         console.error('Error fetching settings:', error)
-        return []
     }
-    return data
+
+    const settings = data || []
+
+    // Fallback to environment variables if missing in DB
+    const keys = [
+        { db: 'trendyol_seller_id', env: 'TRENDYOL_SELLER_ID' },
+        { db: 'trendyol_api_key', env: 'TRENDYOL_API_KEY' },
+        { db: 'trendyol_api_secret', env: 'TRENDYOL_API_SECRET' }
+    ]
+
+    keys.forEach(({ db, env }) => {
+        if (!settings.find(s => s.key === db) && process.env[env]) {
+            settings.push({ key: db, value: process.env[env] as string })
+        }
+    })
+
+    return settings
 }
 
 export async function updateSettings(key: string, value: string) {
@@ -491,6 +506,7 @@ export async function getTrendyolOrders(
     const apiSecret = settings.find(s => s.key === 'trendyol_api_secret')?.value
 
     if (!sellerId || !apiKey || !apiSecret) {
+        console.error('[Trendyol API] Credentials missing in settings table!', { sellerId: !!sellerId, apiKey: !!apiKey, apiSecret: !!apiSecret })
         return { error: 'Trendyol API bilgileri eksik.' }
     }
 
@@ -524,9 +540,9 @@ export async function getTrendyolOrders(
         })
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}))
-            console.error(`[Trendyol API Error] ${response.status}:`, errorData)
-            throw new Error(errorData.message || `Trendyol Hatası (${response.status})`)
+            const errorText = await response.text();
+            console.error(`[Trendyol API Error] ${response.status}:`, errorText);
+            throw new Error(`Trendyol Hatası (${response.status})`);
         }
 
         const data = await response.json()
