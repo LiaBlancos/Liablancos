@@ -13,7 +13,7 @@ export type Category = {
 
 export type Product = {
     id: string
-    trendyol_product_id: number | null
+    trendyol_product_id: string | null
     name: string
     barcode: string
     sku: string | null

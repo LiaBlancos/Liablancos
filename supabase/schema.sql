@@ -19,6 +19,7 @@ create table if not exists shelves (
 -- PRODUCTS
 create table if not exists products (
   id uuid default uuid_generate_v4() primary key,
+  trendyol_product_id text unique,
   name text not null,
   barcode text not null unique,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
@@ -29,7 +30,9 @@ create table if not exists products (
 do $$ 
 begin
     if not exists (select 1 from information_schema.columns where table_name='products' and column_name='trendyol_product_id') then
-        alter table products add column trendyol_product_id bigint unique;
+        alter table products add column trendyol_product_id text unique;
+    else
+        alter table products alter column trendyol_product_id type text using trendyol_product_id::text;
     end if;
     
     if not exists (select 1 from information_schema.columns where table_name='products' and column_name='sku') then
