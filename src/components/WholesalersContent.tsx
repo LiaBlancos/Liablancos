@@ -390,20 +390,21 @@ function ProductPriceCard({ product, wholesalers, prices }: {
                                     <option key={w.id} value={w.id}>{w.name}</option>
                                 ))}
                             </select>
-                            <div className="flex gap-2">
+                            <div className="flex flex-col gap-2">
                                 <input
                                     type="number"
                                     placeholder="Alış Fiyatı"
                                     value={newPrice.buy_price || ''}
                                     onChange={e => setNewPrice({ ...newPrice, buy_price: parseFloat(e.target.value) })}
-                                    className="flex-1 px-4 py-3 text-sm bg-white border border-zinc-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none font-bold"
+                                    className="w-full px-4 py-3 text-sm bg-white border border-zinc-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 outline-none font-bold"
                                 />
                                 <button
                                     onClick={() => handleSavePrice()}
                                     disabled={!newPrice.wholesaler_id || isSaving}
-                                    className="px-6 py-3 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md shadow-indigo-600/10 hover:bg-indigo-700 disabled:opacity-50 transition-all"
+                                    className="w-full py-3.5 bg-indigo-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md shadow-indigo-600/10 hover:bg-indigo-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                                 >
-                                    {isSaving ? '...' : 'Ekle'}
+                                    <Save className="w-4 h-4" />
+                                    {isSaving ? 'Kaydediliyor...' : 'Fiyatı Kaydet'}
                                 </button>
                             </div>
                         </div>
