@@ -529,7 +529,7 @@ export default function AppShell({ children }: AppShellProps) {
 
 
             <main className="flex-1 md:ml-72 min-h-screen">
-                <div className="max-w-7xl mx-auto p-4 md:p-8 animate-fade">
+                <div className="p-4 md:p-8 animate-fade">
                     {children}
                 </div>
             </main>

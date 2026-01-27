@@ -372,7 +372,9 @@ export async function syncTrendyolProducts() {
             name: p.title,
             barcode: p.barcode,
             sku: p.stockCode,
-            image_url: p.images?.[0]?.url || null,
+            image_url: (p.images && p.images.length > 0)
+                ? (typeof p.images[0] === 'string' ? p.images[0] : (p.images[0].url || null))
+                : null,
             is_active: p.active,
             // quantity: p.quantity, -- Commented out to avoid overwriting local stock with Trendyol stock if WMS is source of truth
             updated_at: new Date().toISOString()

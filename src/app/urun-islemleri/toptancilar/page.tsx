@@ -9,8 +9,8 @@ export default async function ToptancilarPage() {
 
     return (
         <AuthWrapper>
-            <div className="p-6">
-                <div className="mb-8">
+            <div className="space-y-8">
+                <div>
                     <h1 className="text-3xl font-black text-zinc-900 tracking-tight">Toptancılar</h1>
                     <p className="text-zinc-500 mt-1">Ürün alış fiyatlarını ve toptancıları yönetin.</p>
                 </div>
