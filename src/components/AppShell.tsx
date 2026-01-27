@@ -134,7 +134,7 @@ export default function AppShell({ children }: AppShellProps) {
     }
 
     return (
-        <div className="min-h-screen bg-zinc-50/50 flex flex-col md:flex-row">
+        <div className="min-h-screen bg-zinc-50/50 flex">
             {/* Desktop Sidebar - Premium Glass Effect */}
             <aside className="hidden md:flex flex-col w-72 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-white h-screen fixed left-0 top-0 z-30">
                 {/* Logo Area */}
@@ -300,8 +300,11 @@ export default function AppShell({ children }: AppShellProps) {
                 </div>
             </aside>
 
+            {/* Desktop Sidebar Spacer */}
+            <div className="hidden md:block w-72 shrink-0" />
+
             {/* Mobile Header - Premium */}
-            <div className="md:hidden bg-white/80 backdrop-blur-xl border-b border-zinc-200/50 p-4 sticky top-0 z-40 flex justify-between items-center">
+            <div className="md:hidden bg-white/80 backdrop-blur-xl border-b border-zinc-200/50 p-4 sticky top-0 z-40 flex justify-between items-center w-full">
                 <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-md">
                         <Warehouse className="w-4 h-4 text-white" />
@@ -527,8 +530,8 @@ export default function AppShell({ children }: AppShellProps) {
                 </div>
             )}
 
-            <main className="flex-1 min-h-screen md:ml-72 bg-zinc-50/50">
-                <div className="max-w-[1600px] mx-auto p-4 md:p-8 animate-fade">
+            <main className="flex-1 min-h-screen">
+                <div className="p-4 md:p-10 animate-fade">
                     {children}
                 </div>
             </main>
