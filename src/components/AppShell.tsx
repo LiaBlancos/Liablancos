@@ -134,7 +134,7 @@ export default function AppShell({ children }: AppShellProps) {
     }
 
     return (
-        <div className="min-h-screen bg-zinc-50 flex flex-col md:flex-row">
+        <div className="min-h-screen bg-zinc-50/50 flex flex-col md:flex-row overflow-x-hidden">
             {/* Desktop Sidebar - Premium Glass Effect */}
             <aside className="hidden md:flex flex-col w-72 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-white h-screen fixed left-0 top-0 z-30">
                 {/* Logo Area */}
