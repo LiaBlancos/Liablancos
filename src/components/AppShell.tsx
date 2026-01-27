@@ -300,6 +300,9 @@ export default function AppShell({ children }: AppShellProps) {
                 </div>
             </aside>
 
+            {/* Desktop Sidebar Spacer */}
+            <div className="hidden md:block w-72 shrink-0" />
+
             {/* Mobile Header - Premium */}
             <div className="md:hidden bg-white/80 backdrop-blur-xl border-b border-zinc-200/50 p-4 sticky top-0 z-40 flex justify-between items-center">
                 <div className="flex items-center gap-3">
@@ -528,7 +531,8 @@ export default function AppShell({ children }: AppShellProps) {
             )}
 
 
-            <main className="flex-1 md:ml-72 min-h-screen">
+
+            <main className="flex-1 min-h-screen">
                 <div className="p-4 md:p-8 animate-fade">
                     {children}
                 </div>
