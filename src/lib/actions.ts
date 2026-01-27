@@ -366,43 +366,156 @@ export async function syncTrendyolProducts() {
             return { success: true, count: 0, message: 'Aktarılacak ürün bulunamadı.' }
         }
 
-        // 2. Fetch current local products to avoid duplicates
-        const { data: localProducts, error: fetchError } = await supabase
+        // 2. Prepare data for upsert
+        const upsertData = allTrendyolProducts.map((p: any) => ({
+            trendyol_product_id: p.id,
+            name: p.title,
+            barcode: p.barcode,
+            sku: p.stockCode,
+            image_url: p.images?.[0]?.url || null,
+            is_active: p.active,
+            // quantity: p.quantity, -- Commented out to avoid overwriting local stock with Trendyol stock if WMS is source of truth
+            updated_at: new Date().toISOString()
+        }))
+
+        // 3. Upsert into products table (onConflict barcode)
+        const { error: upsertError } = await supabase
             .from('products')
-            .select('barcode')
+            .upsert(upsertData, { onConflict: 'barcode' })
 
-        if (fetchError) throw new Error(fetchError.message)
-        const localBarcodes = new Set(localProducts?.map(p => p.barcode) || [])
-
-        // 3. Filter products that don't exist locally
-        const newProducts = allTrendyolProducts
-            .filter((p: any) => !localBarcodes.has(p.barcode))
-            .map((p: any) => ({
-                name: p.title,
-                barcode: p.barcode,
-                quantity: 0,
-                min_stock: 10,
-                updated_at: new Date().toISOString()
-            }))
-
-        if (newProducts.length === 0) {
-            return { success: true, count: 0, message: 'Tüm ürünler zaten yerel stokta mevcut.' }
-        }
-
-        // 4. Batch insert new products
-        const { error: insertError } = await supabase
-            .from('products')
-            .insert(newProducts)
-
-        if (insertError) throw new Error(insertError.message)
+        if (upsertError) throw new Error(upsertError.message)
 
         revalidatePath('/inventory')
         revalidatePath('/low-stock')
-        return { success: true, count: newProducts.length, message: `${newProducts.length} yeni ürün başarıyla aktarıldı.` }
+        revalidatePath('/urun-islemleri/toptancilar')
+
+        return { success: true, count: upsertData.length, message: `${upsertData.length} ürün başarıyla senkronize edildi.` }
     } catch (error: any) {
         console.error('Sync error:', error)
         return { error: error.message || 'Senkronizasyon sırasında bir hata oluştu.' }
     }
+}
+
+// --- WHOLESALERS MANAGEMENT ---
+
+export async function getWholesalers() {
+    const { data, error } = await supabase
+        .from('wholesalers')
+        .select('*')
+        .order('name', { ascending: true })
+
+    if (error) {
+        console.error('Error fetching wholesalers:', error)
+        return []
+    }
+    return data
+}
+
+export async function createWholesaler(data: { name: string; phone?: string; note?: string }) {
+    const { data: newWholesaler, error } = await supabase
+        .from('wholesalers')
+        .insert([data])
+        .select()
+        .single()
+
+    if (error) {
+        console.error('Error creating wholesaler:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/toptancilar')
+    return { success: true, wholesaler: newWholesaler }
+}
+
+export async function updateWholesaler(id: string, data: Partial<{ name: string; phone: string; note: string; is_active: boolean }>) {
+    const { error } = await supabase
+        .from('wholesalers')
+        .update(data)
+        .eq('id', id)
+
+    if (error) {
+        console.error('Error updating wholesaler:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/toptancilar')
+    return { success: true }
+}
+
+export async function getWholesalePrices(productId?: string) {
+    let query = supabase
+        .from('wholesale_prices')
+        .select('*, wholesalers(name)')
+
+    if (productId) {
+        query = query.eq('product_id', productId)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+        console.error('Error fetching wholesale prices:', error)
+        return []
+    }
+    return data
+}
+
+export async function updateWholesalePrice(data: {
+    product_id: string;
+    wholesaler_id: string;
+    buy_price: number;
+    currency?: string;
+    old_price?: number;
+}) {
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // 1. Upsert price
+    const { error: priceError } = await supabase
+        .from('wholesale_prices')
+        .upsert({
+            product_id: data.product_id,
+            wholesaler_id: data.wholesaler_id,
+            buy_price: data.buy_price,
+            currency: data.currency || 'TRY',
+            last_updated_at: new Date().toISOString()
+        }, { onConflict: 'product_id,wholesaler_id' })
+
+    if (priceError) {
+        console.error('Error updating wholesale price:', priceError)
+        return { error: priceError.message }
+    }
+
+    // 2. Log change if price is different
+    if (data.old_price === undefined || data.old_price !== data.buy_price) {
+        await supabase
+            .from('price_change_logs')
+            .insert({
+                product_id: data.product_id,
+                wholesaler_id: data.wholesaler_id,
+                old_price: data.old_price,
+                new_price: data.buy_price,
+                currency: data.currency || 'TRY',
+                changed_by: user?.id
+            })
+    }
+
+    revalidatePath('/urun-islemleri/toptancilar')
+    return { success: true }
+}
+
+export async function deleteWholesalePrice(productId: string, wholesalerId: string) {
+    const { error } = await supabase
+        .from('wholesale_prices')
+        .delete()
+        .match({ product_id: productId, wholesaler_id: wholesalerId })
+
+    if (error) {
+        console.error('Error deleting wholesale price:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/toptancilar')
+    return { success: true }
 }
 
 export async function updateDamagedStock(

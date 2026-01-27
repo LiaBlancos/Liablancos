@@ -19,8 +19,10 @@ create table shelves (
 -- PRODUCTS
 create table products (
   id uuid default uuid_generate_v4() primary key,
+  trendyol_product_id bigint unique,
   name text not null,
   barcode text not null unique,
+  sku text,
   description text,
   quantity integer default 0 check (quantity >= 0),
   damaged_quantity integer default 0 check (damaged_quantity >= 0),
@@ -28,8 +30,42 @@ create table products (
   shelf_id uuid references shelves(id) on delete set null,
   category_id uuid references categories(id) on delete set null,
   image_url text,
+  is_active boolean default true,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- WHOLESALERS
+create table wholesalers (
+  id uuid default uuid_generate_v4() primary key,
+  name text not null unique,
+  phone text,
+  note text,
+  is_active boolean default true,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- WHOLESALE PRICES
+create table wholesale_prices (
+  id uuid default uuid_generate_v4() primary key,
+  product_id uuid references products(id) on delete cascade not null,
+  wholesaler_id uuid references wholesalers(id) on delete cascade not null,
+  buy_price numeric(10,2) not null default 0,
+  currency text default 'TRY' not null,
+  last_updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(product_id, wholesaler_id)
+);
+
+-- PRICE CHANGE LOGS
+create table price_change_logs (
+  id uuid default uuid_generate_v4() primary key,
+  product_id uuid references products(id) on delete cascade not null,
+  wholesaler_id uuid references wholesalers(id) on delete cascade not null,
+  old_price numeric(10,2),
+  new_price numeric(10,2) not null,
+  currency text not null,
+  changed_by uuid references auth.users(id) on delete set null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 -- INVENTORY LOGS
@@ -55,6 +91,8 @@ create table inventory_logs (
 create index idx_products_barcode on products(barcode);
 create index idx_products_shelf on products(shelf_id);
 create index idx_logs_product on inventory_logs(product_id);
+create index idx_wholesale_prices_product on wholesale_prices(product_id);
+create index idx_wholesale_prices_wholesaler on wholesale_prices(wholesaler_id);
 
 -- SETTINGS
 create table settings (

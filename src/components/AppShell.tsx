@@ -51,6 +51,7 @@ export default function AppShell({ children }: AppShellProps) {
 
     const [isShippingOpen, setIsShippingOpen] = useState(false)
     const [isCalcOpen, setIsCalcOpen] = useState(false)
+    const [isProductOpen, setIsProductOpen] = useState(false)
 
     useEffect(() => {
         if (isCurrentlyOnStockPage) {
@@ -61,6 +62,9 @@ export default function AppShell({ children }: AppShellProps) {
         }
         if (pathname.startsWith('/calculator')) {
             setIsCalcOpen(true)
+        }
+        if (pathname.startsWith('/urun-islemleri')) {
+            setIsProductOpen(true)
         }
     }, [pathname, isCurrentlyOnStockPage, isCurrentlyOnShippingPage])
 
@@ -86,6 +90,10 @@ export default function AppShell({ children }: AppShellProps) {
         { name: 'Gecikenler', href: '/shipping/delayed', icon: Timer },
         { name: 'Teslim Edilenler', href: '/shipping/delivered', icon: Package },
         { name: 'İadeler', href: '/shipping/returns', icon: RotateCcw },
+    ]
+
+    const productNavigation = [
+        { name: 'Toptancılar', href: '/urun-islemleri/toptancilar', icon: Truck },
     ]
 
     const calculationNavigation = [
@@ -171,6 +179,35 @@ export default function AppShell({ children }: AppShellProps) {
                         )}>
                             <div className="overflow-hidden space-y-1">
                                 {stockNavigation.map((item) => <NavLink key={item.name} item={item} isSubItem />)}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Collapsible Product Menu */}
+                    <div className="pt-2">
+                        <button
+                            onClick={() => setIsProductOpen(!isProductOpen)}
+                            className={cn(
+                                "group flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200",
+                                pathname.startsWith('/urun-islemleri') ? "text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                            )}
+                        >
+                            <div className="flex items-center gap-3">
+                                <PackagePlus className="w-5 h-5" />
+                                <span className="font-bold uppercase tracking-wider text-[11px]">Ürün İşlemleri</span>
+                            </div>
+                            <ChevronDown className={cn(
+                                "w-4 h-4 transition-transform duration-300 opacity-50",
+                                isProductOpen ? "rotate-0" : "-rotate-90"
+                            )} />
+                        </button>
+
+                        <div className={cn(
+                            "grid transition-all duration-300 ease-in-out",
+                            isProductOpen ? "grid-rows-[1fr] opacity-100 mt-1" : "grid-rows-[0fr] opacity-0 overflow-hidden"
+                        )}>
+                            <div className="overflow-hidden space-y-1">
+                                {productNavigation.map((item) => <NavLink key={item.name} item={item} isSubItem />)}
                             </div>
                         </div>
                     </div>

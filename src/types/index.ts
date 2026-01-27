@@ -13,8 +13,10 @@ export type Category = {
 
 export type Product = {
     id: string
+    trendyol_product_id: number | null
     name: string
     barcode: string
+    sku: string | null
     description: string | null
     quantity: number
     damaged_quantity: number
@@ -22,10 +24,30 @@ export type Product = {
     shelf_id: string | null
     category_id: string | null
     image_url: string | null
+    is_active: boolean
     created_at: string
     updated_at: string
     shelves?: Shelf | null // Joined
     categories?: Category | null // Joined
+}
+
+export type Wholesaler = {
+    id: string
+    name: string
+    phone: string | null
+    note: string | null
+    is_active: boolean
+    created_at: string
+}
+
+export type WholesalePrice = {
+    id: string
+    product_id: string
+    wholesaler_id: string
+    buy_price: number
+    currency: string
+    last_updated_at: string
+    wholesalers?: { name: string }
 }
 
 export type InventoryLog = {
