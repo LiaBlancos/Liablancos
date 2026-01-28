@@ -531,17 +531,17 @@ function ProductPriceCard({ product, wholesalers, prices, onShowWholesaler }: {
 
                     <div className="space-y-2">
                         {prices.map(price => (
-                            <div key={price.id} className="group/price flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-zinc-50/50 rounded-2xl border border-zinc-100/50 hover:bg-white hover:border-zinc-200 transition-all gap-3">
+                            <div key={price.id} className="group/price flex items-center justify-between p-4 bg-zinc-50/50 rounded-2xl border border-zinc-100/50 hover:bg-white hover:border-zinc-200 transition-all gap-4">
                                 <div className="min-w-0 flex-1">
                                     <button
                                         onClick={() => onShowWholesaler(price.wholesalers?.name || '')}
-                                        className="text-sm font-bold text-zinc-800 truncate hover:text-indigo-600 transition-colors block text-left"
+                                        className="text-sm font-bold text-zinc-800 truncate hover:text-indigo-600 transition-colors block text-left w-full"
                                     >
                                         {price.wholesalers?.name}
                                     </button>
                                     <p className="text-[10px] font-medium text-zinc-400 mt-0.5">{new Date(price.last_updated_at).toLocaleDateString('tr-TR')}</p>
                                 </div>
-                                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                                <div className="flex items-center gap-3 shrink-0">
                                     {editingPriceId === price.id ? (
                                         <div className="flex items-center gap-2">
                                             <input
@@ -566,8 +566,8 @@ function ProductPriceCard({ product, wholesalers, prices, onShowWholesaler }: {
                                         </div>
                                     ) : (
                                         <>
-                                            <span className="text-sm font-black text-zinc-900">{price.buy_price.toLocaleString('tr-TR')} TL</span>
-                                            <div className="flex items-center gap-1">
+                                            <span className="text-sm font-black text-zinc-900 whitespace-nowrap">{price.buy_price.toLocaleString('tr-TR')} TL</span>
+                                            <div className="flex items-center gap-1 border-l border-zinc-200 pl-2 ml-1">
                                                 <button
                                                     onClick={() => {
                                                         setEditingPriceId(price.id)
