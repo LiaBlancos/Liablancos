@@ -1023,34 +1023,46 @@ export async function syncTrendyolOrdersToDb() {
             }
 
             for (const order of result.orders) {
-                const { data: pkg, error: pkgError } = await supabase
-                    .from('shipment_packages')
-                    .upsert({
-                        order_number: order.orderNumber,
-                        shipment_package_id: order.shipmentPackages?.[0]?.id?.toString() || null,
-                        customer_name: `${order.customerFirstName} ${order.customerLastName}`,
-                        total_price: order.totalPrice,
-                        order_date: new Date(order.orderDate).toISOString(),
-                        status: order.status,
-                        updated_at: new Date().toISOString()
-                    }, { onConflict: 'shipment_package_id' })
-                    .select('id')
-                    .maybeSingle()
+                // IMPORTANT: One order can have multiple shipment packages
+                const packages = order.shipmentPackages && order.shipmentPackages.length > 0
+                    ? order.shipmentPackages
+                    : [{ id: null }] // Fallback if no packages listed
 
-                if (pkgError) continue
+                for (const pkgInfo of packages) {
+                    const shipmentPackageId = pkgInfo.id?.toString() || null
 
-                if (pkg && order.lines) {
-                    await supabase.from('shipment_package_items').delete().eq('package_id', pkg.id)
-                    const items = order.lines.map((line: any) => ({
-                        package_id: pkg.id,
-                        barcode: line.barcode,
-                        product_name: line.productName,
-                        quantity: line.quantity,
-                        price: line.price
-                    }))
-                    await supabase.from('shipment_package_items').insert(items)
+                    const { data: pkg, error: pkgError } = await supabase
+                        .from('shipment_packages')
+                        .upsert({
+                            order_number: order.orderNumber,
+                            shipment_package_id: shipmentPackageId,
+                            customer_name: `${order.customerFirstName} ${order.customerLastName}`,
+                            total_price: order.totalPrice,
+                            order_date: new Date(order.orderDate).toISOString(),
+                            status: order.status,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'shipment_package_id' })
+                        .select('id')
+                        .maybeSingle()
+
+                    if (pkgError) {
+                        console.error(`[LiaBlancos] Error upserting package ${shipmentPackageId} for order ${order.orderNumber}:`, pkgError)
+                        continue
+                    }
+
+                    if (pkg && order.lines) {
+                        await supabase.from('shipment_package_items').delete().eq('package_id', pkg.id)
+                        const items = order.lines.map((line: any) => ({
+                            package_id: pkg.id,
+                            barcode: line.barcode,
+                            product_name: line.productName,
+                            quantity: line.quantity,
+                            price: line.price
+                        }))
+                        await supabase.from('shipment_package_items').insert(items)
+                    }
+                    savedCount++
                 }
-                savedCount++
             }
         }
 
@@ -1092,9 +1104,11 @@ export async function syncTrendyolPayments() {
 
         const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
         const now = Date.now()
-        const CHUNK_SIZE_MS = 13 * 24 * 60 * 60 * 1000 // Trendyol limit is 14 days (336 hours)
-        const chunkIndices = Array.from({ length: 6 }, (_, i) => i)
+        const CHUNK_SIZE_MS = 7 * 24 * 60 * 60 * 1000 // Very safe 7 days
+        const chunkIndices = Array.from({ length: 12 }, (_, i) => i) // 84 days
         let allTransactions: any[] = []
+
+        console.log(`[LiaBlancos] Starting Conservative Payment Sync (84 days, 7-day chunks)...`)
 
         for (const i of chunkIndices) {
             const endDate = now - (i * CHUNK_SIZE_MS)
@@ -1110,12 +1124,17 @@ export async function syncTrendyolPayments() {
 
             if (response.ok) {
                 const data = await response.json()
-                if (data.content) allTransactions = [...allTransactions, ...data.content]
+                if (data.content) {
+                    console.log(`[LiaBlancos] Finance Chunk ${i + 1} Pulled: ${data.content.length}`)
+                    allTransactions = [...allTransactions, ...data.content]
+                }
             } else {
                 const errorBody = await response.text()
                 console.error(`[LiaBlancos] Finance API Error (Chunk ${i}): ${response.status} - ${errorBody}`)
                 log.error = `API Error ${response.status}: ${errorBody}`
             }
+            // Small delay
+            await new Promise(resolve => setTimeout(resolve, 500))
         }
 
         const transactions = allTransactions
