@@ -567,19 +567,19 @@ function ProductPriceCard({ product, wholesalers, prices, onShowWholesaler }: {
                                     ) : (
                                         <>
                                             <span className="text-sm font-black text-zinc-900">{price.buy_price.toLocaleString('tr-TR')} TL</span>
-                                            <div className="flex items-center gap-1 transition-opacity">
+                                            <div className="flex items-center gap-1">
                                                 <button
                                                     onClick={() => {
                                                         setEditingPriceId(price.id)
                                                         setEditValue(price.buy_price)
                                                     }}
-                                                    className="p-1.5 text-zinc-400 sm:text-zinc-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                                    className="p-1.5 text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
                                                 >
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>
                                                 <button
                                                     onClick={() => handleDeletePrice(price.wholesaler_id)}
-                                                    className="p-1.5 text-zinc-400 sm:text-zinc-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
+                                                    className="p-1.5 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
