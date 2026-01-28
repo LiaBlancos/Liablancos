@@ -62,3 +62,57 @@ export type InventoryLog = {
     note: string | null
     created_at: string
 }
+
+export type PaymentStatus = 'unpaid' | 'paid' | 'partial' | 'unknown'
+
+export type ShipmentPackage = {
+    id: string
+    order_number: string
+    shipment_package_id: string | null
+    customer_name: string | null
+    total_price: number
+    order_date: string | null
+    delivery_date: string | null
+    status: string | null
+    payment_status: PaymentStatus
+    paid_at: string | null
+    paid_amount: number | null
+    payment_reference: string | null
+    payment_last_checked_at: string | null
+    created_at: string
+    updated_at: string
+    items?: ShipmentPackageItem[]
+}
+
+export type ShipmentPackageItem = {
+    id: string
+    package_id: string
+    barcode: string | null
+    product_name: string | null
+    quantity: number
+    price: number
+    created_at: string
+}
+
+export type PaymentSyncLog = {
+    id: string
+    run_at: string
+    pulled_count: number
+    matched_count: number
+    paid_count: number
+    unpaid_count: number
+    unmatched_count: number
+    error: string | null
+    created_at: string
+}
+
+export type UnmatchedPayment = {
+    id: string
+    shipment_package_id: string | null
+    order_number: string | null
+    transaction_date: string | null
+    amount: number
+    payment_reference: string | null
+    raw_data: any
+    created_at: string
+}

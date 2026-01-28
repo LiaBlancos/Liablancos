@@ -140,3 +140,67 @@ create table if not exists settings (
   value text not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+
+-- PAYMENT TRACKING
+do $$ 
+begin 
+    if not exists (select 1 from pg_type where typname = 'payment_status') then 
+        create type payment_status as enum ('unpaid', 'paid', 'partial', 'unknown');
+    end if;
+end $$;
+
+create table if not exists shipment_packages (
+  id uuid default uuid_generate_v4() primary key,
+  order_number text not null,
+  shipment_package_id text unique,
+  customer_name text,
+  total_price numeric(10,2) default 0,
+  order_date timestamp with time zone,
+  delivery_date timestamp with time zone,
+  status text, -- Trendyol status: Shipped, Delivered, etc.
+  payment_status payment_status default 'unpaid',
+  paid_at timestamp with time zone,
+  paid_amount numeric(10,2),
+  payment_reference text,
+  payment_last_checked_at timestamp with time zone,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create table if not exists shipment_package_items (
+  id uuid default uuid_generate_v4() primary key,
+  package_id uuid references shipment_packages(id) on delete cascade not null,
+  barcode text,
+  product_name text,
+  quantity integer default 1,
+  price numeric(10,2) default 0,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create table if not exists payment_sync_logs (
+  id uuid default uuid_generate_v4() primary key,
+  run_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  pulled_count integer default 0,
+  matched_count integer default 0,
+  paid_count integer default 0,
+  unpaid_count integer default 0,
+  unmatched_count integer default 0,
+  error text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+create table if not exists unmatched_payments (
+  id uuid default uuid_generate_v4() primary key,
+  shipment_package_id text,
+  order_number text,
+  transaction_date timestamp with time zone,
+  amount numeric(10,2),
+  payment_reference text unique,
+  raw_data jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- More indexes
+create index if not exists idx_shipment_order_number on shipment_packages(order_number);
+create index if not exists idx_shipment_package_id on shipment_packages(shipment_package_id);
+create index if not exists idx_shipment_items_package on shipment_package_items(package_id);

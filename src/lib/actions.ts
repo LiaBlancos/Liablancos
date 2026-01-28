@@ -1002,3 +1002,272 @@ export async function getExtendedTrendyolReturns(page: number = 0, size: number 
         return { error: 'Genişletilmiş iade verileri çekilemedi.' }
     }
 }
+
+export async function syncTrendyolOrdersToDb() {
+    try {
+        // Fetch last 30 days of orders to ensure we have them in DB
+        const now = Date.now()
+        const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000)
+
+        console.log('[LiaBlancos] Syncing Trendyol Orders to DB...')
+        const result = await getTrendyolOrders(['Shipped', 'Delivered', 'Returned', 'UnDelivered'], 0, 100, thirtyDaysAgo, now)
+
+        if (!result.success || !result.orders) {
+            throw new Error(result.error || 'Siparişler çekilemedi.')
+        }
+
+        let savedCount = 0
+        for (const order of result.orders) {
+            // Upsert shipment package
+            const { data: pkg, error: pkgError } = await supabase
+                .from('shipment_packages')
+                .upsert({
+                    order_number: order.orderNumber,
+                    shipment_package_id: order.shipmentPackages?.[0]?.id?.toString() || null,
+                    customer_name: `${order.customerFirstName} ${order.customerLastName}`,
+                    total_price: order.totalPrice,
+                    order_date: new Date(order.orderDate).toISOString(),
+                    status: order.status,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'shipment_package_id' })
+                .select()
+                .single()
+
+            if (pkgError) {
+                console.error(`Error saving package ${order.orderNumber}:`, pkgError)
+                continue
+            }
+
+            // Save items if package was saved
+            if (pkg && order.lines) {
+                // Clear existing items for this package to avoid duplicates on resync
+                await supabase.from('shipment_package_items').delete().eq('package_id', pkg.id)
+
+                const items = order.lines.map((line: any) => ({
+                    package_id: pkg.id,
+                    barcode: line.barcode,
+                    product_name: line.productName,
+                    quantity: line.quantity,
+                    price: line.price
+                }))
+
+                await supabase.from('shipment_package_items').insert(items)
+            }
+            savedCount++
+        }
+
+        console.log(`[LiaBlancos] Orders Sync Complete. Saved ${savedCount} packages.`)
+        return { success: true, count: savedCount }
+    } catch (error: any) {
+        console.error('syncTrendyolOrdersToDb error:', error)
+        return { error: error.message }
+    }
+}
+
+export async function syncTrendyolPayments() {
+    const runAt = new Date().toISOString()
+    let log = {
+        pulled_count: 0,
+        matched_count: 0,
+        paid_count: 0,
+        unpaid_count: 0,
+        unmatched_count: 0,
+        error: null as string | null
+    }
+
+    try {
+        // 1. Sync orders first to make sure DB is up to date
+        await syncTrendyolOrdersToDb()
+
+        // 2. Get credentials
+        const settings = await getSettings()
+        const sellerId = settings.find(s => s.key === 'trendyol_seller_id')?.value
+        const apiKey = settings.find(s => s.key === 'trendyol_api_key')?.value
+        const apiSecret = settings.find(s => s.key === 'trendyol_api_secret')?.value
+
+        if (!sellerId || !apiKey || !apiSecret) {
+            throw new Error('Trendyol API bilgileri eksik.')
+        }
+
+        const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
+        const now = Date.now()
+        const ninetyDaysAgo = now - (90 * 24 * 60 * 60 * 1000)
+
+        // Trendyol Finance API (Settlements)
+        const url = `https://api.trendyol.com/integration/finance/sellers/${sellerId}/settlements?startDate=${ninetyDaysAgo}&endDate=${now}&size=1000`
+
+        console.log(`[Trendyol API] Fetching Payments: ${url}`)
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': `Basic ${auth}`,
+                'User-Agent': `${sellerId} - SelfIntegration`
+            }
+        })
+
+        if (!response.ok) {
+            throw new Error(`Trendyol Finans Hatası (${response.status})`)
+        }
+
+        const data = await response.json()
+        const transactions = data.content || []
+        log.pulled_count = transactions.length
+
+        for (const tx of transactions) {
+            const shipmentPackageId = tx.shipmentPackageId?.toString()
+            const orderNumber = tx.orderNumber?.toString()
+            const amount = tx.transactionAmount
+            const reference = tx.transactionId?.toString()
+
+            // Try to find by shipmentPackageId
+            let pkgFound = false
+            if (shipmentPackageId) {
+                const { data: pkg } = await supabase
+                    .from('shipment_packages')
+                    .select('id, payment_status')
+                    .eq('shipment_package_id', shipmentPackageId)
+                    .single()
+
+                if (pkg) {
+                    pkgFound = true
+                    await supabase.from('shipment_packages').update({
+                        payment_status: 'paid',
+                        paid_at: new Date(tx.transactionDate).toISOString(),
+                        paid_amount: amount,
+                        payment_reference: reference,
+                        payment_last_checked_at: runAt,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', pkg.id)
+                    log.matched_count++
+                    log.paid_count++
+                }
+            }
+
+            // If not found, try by orderNumber
+            if (!pkgFound && orderNumber) {
+                const { data: pkg } = await supabase
+                    .from('shipment_packages')
+                    .select('id, payment_status')
+                    .eq('order_number', orderNumber)
+                    .single()
+
+                if (pkg) {
+                    pkgFound = true
+                    await supabase.from('shipment_packages').update({
+                        payment_status: 'paid',
+                        paid_at: new Date(tx.transactionDate).toISOString(),
+                        paid_amount: amount,
+                        payment_reference: reference,
+                        payment_last_checked_at: runAt,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', pkg.id)
+                    log.matched_count++
+                    log.paid_count++
+                }
+            }
+
+            // If still not found, save to unmatched
+            if (!pkgFound) {
+                await supabase.from('unmatched_payments').upsert({
+                    shipment_package_id: shipmentPackageId,
+                    order_number: orderNumber,
+                    transaction_date: new Date(tx.transactionDate).toISOString(),
+                    amount: amount,
+                    payment_reference: reference,
+                    raw_data: tx
+                }, { onConflict: 'payment_reference' })
+                log.unmatched_count++
+            }
+        }
+
+        // Count unpaid
+        const { count: unpaidCount } = await supabase
+            .from('shipment_packages')
+            .select('*', { count: 'exact', head: true })
+            .eq('payment_status', 'unpaid')
+
+        log.unpaid_count = unpaidCount || 0
+
+        // Save log
+        await supabase.from('payment_sync_logs').insert({
+            run_at: runAt,
+            ...log
+        })
+
+        revalidatePath('/finans/odemeler')
+        return { success: true, log }
+    } catch (error: any) {
+        console.error('syncTrendyolPayments error:', error)
+        log.error = error.message
+        await supabase.from('payment_sync_logs').insert({
+            run_at: runAt,
+            ...log
+        })
+        return { error: error.message }
+    }
+}
+
+export async function getPaymentStats() {
+    try {
+        const { data: paidData } = await supabase
+            .from('shipment_packages')
+            .select('id', { count: 'exact', head: true })
+            .eq('payment_status', 'paid')
+
+        const { data: unpaidData } = await supabase
+            .from('shipment_packages')
+            .select('id', { count: 'exact', head: true })
+            .eq('payment_status', 'unpaid')
+
+        const { data: lastLog } = await supabase
+            .from('payment_sync_logs')
+            .select('run_at')
+            .order('run_at', { ascending: false })
+            .limit(1)
+
+        return {
+            paid: paidData?.length || 0,
+            unpaid: unpaidData?.length || 0,
+            last_checked: lastLog?.[0]?.run_at || null
+        }
+    } catch (e) {
+        return { paid: 0, unpaid: 0, last_checked: null }
+    }
+}
+
+export async function getShipmentPackages(filter: 'all' | 'paid' | 'unpaid' = 'all') {
+    try {
+        let query = supabase
+            .from('shipment_packages')
+            .select(`
+                *,
+                shipment_package_items (*)
+            `)
+            .order('order_date', { ascending: false })
+
+        if (filter === 'paid') query = query.eq('payment_status', 'paid')
+        if (filter === 'unpaid') query = query.eq('payment_status', 'unpaid')
+
+        const { data, error } = await query
+
+        if (error) throw error
+        return data as any[]
+    } catch (e) {
+        console.error('getShipmentPackages error:', e)
+        return []
+    }
+}
+
+export async function getUnmatchedPayments() {
+    try {
+        const { data, error } = await supabase
+            .from('unmatched_payments')
+            .select('*')
+            .order('transaction_date', { ascending: false })
+
+        if (error) throw error
+        return data as any[]
+    } catch (e) {
+        console.error('getUnmatchedPayments error:', e)
+        return []
+    }
+}

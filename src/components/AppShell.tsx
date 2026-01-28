@@ -27,6 +27,7 @@ import {
     Timer,
     RotateCcw,
     Calculator,
+    Wallet,
     LogOut
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -52,6 +53,7 @@ export default function AppShell({ children }: AppShellProps) {
     const [isShippingOpen, setIsShippingOpen] = useState(false)
     const [isCalcOpen, setIsCalcOpen] = useState(false)
     const [isProductOpen, setIsProductOpen] = useState(false)
+    const [isFinanceOpen, setIsFinanceOpen] = useState(false)
 
     useEffect(() => {
         if (isCurrentlyOnStockPage) {
@@ -65,6 +67,9 @@ export default function AppShell({ children }: AppShellProps) {
         }
         if (pathname.startsWith('/urun-islemleri')) {
             setIsProductOpen(true)
+        }
+        if (pathname.startsWith('/finans')) {
+            setIsFinanceOpen(true)
         }
     }, [pathname, isCurrentlyOnStockPage, isCurrentlyOnShippingPage])
 
@@ -98,6 +103,10 @@ export default function AppShell({ children }: AppShellProps) {
 
     const calculationNavigation = [
         { name: 'Kâr Hesaplayıcı', href: '/calculator/profit', icon: Calculator },
+    ]
+
+    const financeNavigation = [
+        { name: 'Ödemeler', href: '/finans/odemeler', icon: Wallet },
     ]
 
     const otherNavigation = [
@@ -266,6 +275,35 @@ export default function AppShell({ children }: AppShellProps) {
                         )}>
                             <div className="overflow-hidden space-y-1">
                                 {calculationNavigation.map((item) => <NavLink key={item.name} item={item} isSubItem />)}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Collapsible Finance Menu */}
+                    <div className="pt-2">
+                        <button
+                            onClick={() => setIsFinanceOpen(!isFinanceOpen)}
+                            className={cn(
+                                "group flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200",
+                                pathname.startsWith('/finans') ? "text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                            )}
+                        >
+                            <div className="flex items-center gap-3">
+                                <Wallet className="w-5 h-5" />
+                                <span className="font-bold uppercase tracking-wider text-[11px]">Finans</span>
+                            </div>
+                            <ChevronDown className={cn(
+                                "w-4 h-4 transition-transform duration-300 opacity-50",
+                                isFinanceOpen ? "rotate-0" : "-rotate-90"
+                            )} />
+                        </button>
+
+                        <div className={cn(
+                            "grid transition-all duration-300 ease-in-out",
+                            isFinanceOpen ? "grid-rows-[1fr] opacity-100 mt-1" : "grid-rows-[0fr] opacity-0 overflow-hidden"
+                        )}>
+                            <div className="overflow-hidden space-y-1">
+                                {financeNavigation.map((item) => <NavLink key={item.name} item={item} isSubItem />)}
                             </div>
                         </div>
                     </div>
@@ -512,6 +550,50 @@ export default function AppShell({ children }: AppShellProps) {
                             )}>
                                 <div className="overflow-hidden space-y-2">
                                     {calculationNavigation.map((item) => (
+                                        <Link
+                                            key={item.name}
+                                            href={item.href}
+                                            onClick={() => setIsMobileMenuOpen(false)}
+                                            className={cn(
+                                                "flex items-center gap-4 ml-8 px-6 py-4 rounded-2xl transition-all",
+                                                pathname === item.href
+                                                    ? "bg-white/10 text-white"
+                                                    : "text-slate-400 hover:bg-white/5"
+                                            )}
+                                        >
+                                            <item.icon className="w-5 h-5" />
+                                            <span className="font-medium">{item.name}</span>
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Mobile Finance Group */}
+                        <div className="pt-2">
+                            <button
+                                onClick={() => setIsFinanceOpen(!isFinanceOpen)}
+                                className={cn(
+                                    "flex items-center justify-between w-full px-6 py-4 rounded-2xl transition-all",
+                                    pathname.startsWith('/finans') ? "text-white" : "text-slate-400"
+                                )}
+                            >
+                                <div className="flex items-center gap-4">
+                                    <Wallet className="w-6 h-6" />
+                                    <span className="font-black uppercase tracking-widest text-sm">Finans</span>
+                                </div>
+                                <ChevronDown className={cn(
+                                    "w-5 h-5 transition-transform duration-300",
+                                    isFinanceOpen ? "rotate-0" : "-rotate-90"
+                                )} />
+                            </button>
+
+                            <div className={cn(
+                                "grid transition-all duration-300 ease-in-out",
+                                isFinanceOpen ? "grid-rows-[1fr] opacity-100 mt-2" : "grid-rows-[0fr] opacity-0 overflow-hidden"
+                            )}>
+                                <div className="overflow-hidden space-y-2">
+                                    {financeNavigation.map((item) => (
                                         <Link
                                             key={item.name}
                                             href={item.href}
