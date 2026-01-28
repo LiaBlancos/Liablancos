@@ -90,6 +90,7 @@ create table if not exists wholesale_prices (
   wholesaler_id uuid references wholesalers(id) on delete cascade not null,
   buy_price numeric(10,2) not null default 0,
   currency text default 'TRY' not null,
+  is_active boolean default true,
   last_updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
   unique(product_id, wholesaler_id)
 );

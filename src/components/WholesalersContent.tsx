@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { Product, Wholesaler, WholesalePrice } from '@/types'
 import { Search, Plus, RefreshCcw, CheckCircle2, AlertTriangle, Truck, Trash2, Edit2, Package, Save, X, Barcode, Tag, ExternalLink, Phone, MapPin } from 'lucide-react'
-import { syncTrendyolProducts, createWholesaler, updateWholesaler, updateWholesalePrice, deleteWholesalePrice } from '@/lib/actions'
+import { syncTrendyolProducts, createWholesaler, updateWholesaler, updateWholesalePrice, toggleWholesalePriceStatus, deleteWholesalePrice } from '@/lib/actions'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
@@ -401,6 +401,19 @@ function ProductPriceCard({ product, wholesalers, prices, onShowWholesaler }: {
         }
     }
 
+    const handleToggleStatus = async (wholesalerId: string, currentStatus: boolean) => {
+        try {
+            const result = await toggleWholesalePriceStatus(product.id, wholesalerId, currentStatus)
+            if (result.success) {
+                router.refresh()
+            } else {
+                alert(result.error)
+            }
+        } catch (e) {
+            alert('Durum güncellenirken hata oluştu.')
+        }
+    }
+
     const handleDeletePrice = async (wholesalerId: string) => {
         if (!confirm('Bu toptancı fiyatını silmek istediğinize emin misiniz?')) return
         try {
@@ -533,6 +546,15 @@ function ProductPriceCard({ product, wholesalers, prices, onShowWholesaler }: {
                         {prices.map(price => (
                             <div key={price.id} className="group/price flex items-center justify-between p-4 bg-zinc-50/50 rounded-2xl border border-zinc-100/50 hover:bg-white hover:border-zinc-200 transition-all gap-4">
                                 <div className="min-w-0 flex-1">
+                                    <button
+                                        onClick={() => handleToggleStatus(price.wholesaler_id, price.is_active)}
+                                        className={cn(
+                                            "text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded-md mb-1 transition-all",
+                                            price.is_active ? "bg-emerald-500 text-white shadow-sm shadow-emerald-200" : "bg-rose-500 text-white shadow-sm shadow-rose-200"
+                                        )}
+                                    >
+                                        {price.is_active ? 'Stok Var' : 'Stok Yok'}
+                                    </button>
                                     <button
                                         onClick={() => onShowWholesaler(price.wholesalers?.name || '')}
                                         className="text-sm font-bold text-zinc-800 truncate hover:text-indigo-600 transition-colors block text-left w-full"

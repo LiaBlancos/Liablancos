@@ -531,6 +531,41 @@ export async function updateWholesalePrice(data: {
     }
 }
 
+export async function toggleWholesalePriceStatus(productId: string, wholesalerId: string, currentStatus: boolean) {
+    try {
+        const { data: sourceProduct } = await supabase
+            .from('products')
+            .select('sku')
+            .eq('id', productId)
+            .single()
+
+        let productIds = [productId]
+        if (sourceProduct?.sku) {
+            const { data: relatedProducts } = await supabase
+                .from('products')
+                .select('id')
+                .eq('sku', sourceProduct.sku)
+            if (relatedProducts) {
+                productIds = relatedProducts.map(p => p.id)
+            }
+        }
+
+        const { error } = await supabase
+            .from('wholesale_prices')
+            .update({ is_active: !currentStatus })
+            .in('product_id', productIds)
+            .eq('wholesaler_id', wholesalerId)
+
+        if (error) throw error
+
+        revalidatePath('/urun-islemleri/toptancilar')
+        return { success: true }
+    } catch (error: any) {
+        console.error('Error toggling wholesale price status:', error)
+        return { error: error.message }
+    }
+}
+
 export async function deleteWholesalePrice(productId: string, wholesalerId: string) {
     try {
         // 1. Get the SKU of the source product

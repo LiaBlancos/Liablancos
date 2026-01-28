@@ -47,6 +47,7 @@ export type WholesalePrice = {
     wholesaler_id: string
     buy_price: number
     currency: string
+    is_active: boolean
     last_updated_at: string
     wholesalers?: { name: string }
 }
