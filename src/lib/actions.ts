@@ -1091,25 +1091,29 @@ export async function syncTrendyolPayments() {
 
         const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
         const now = Date.now()
-        const ninetyDaysAgo = now - (90 * 24 * 60 * 60 * 1000)
+        const CHUNK_SIZE_MS = 15 * 24 * 60 * 60 * 1000
+        const chunkIndices = Array.from({ length: 6 }, (_, i) => i)
+        let allTransactions: any[] = []
 
-        // Trendyol Finance API (Settlements)
-        const url = `https://api.trendyol.com/integration/finance/sellers/${sellerId}/settlements?startDate=${ninetyDaysAgo}&endDate=${now}&size=1000`
+        for (const i of chunkIndices) {
+            const endDate = now - (i * CHUNK_SIZE_MS)
+            const startDate = endDate - CHUNK_SIZE_MS
+            const url = `https://api.trendyol.com/integration/finance/sellers/${sellerId}/settlements?startDate=${startDate}&endDate=${endDate}&size=1000`
 
-        console.log(`[Trendyol API] Fetching Payments: ${url}`)
-        const response = await fetch(url, {
-            headers: {
-                'Authorization': `Basic ${auth}`,
-                'User-Agent': `${sellerId} - SelfIntegration`
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'User-Agent': `${sellerId} - SelfIntegration`
+                }
+            })
+
+            if (response.ok) {
+                const data = await response.json()
+                if (data.content) allTransactions = [...allTransactions, ...data.content]
             }
-        })
-
-        if (!response.ok) {
-            throw new Error(`Trendyol Finans Hatası (${response.status})`)
         }
 
-        const data = await response.json()
-        const transactions = data.content || []
+        const transactions = allTransactions
         log.pulled_count = transactions.length
 
         for (const tx of transactions) {
