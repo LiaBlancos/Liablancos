@@ -24,6 +24,7 @@ interface PaymentsContentProps {
         paid: number
         unpaid: number
         last_checked: string | null
+        last_error: string | null
     }
     packages: any[]
     unmatched: any[]
@@ -75,6 +76,11 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                             <Clock className="w-4 h-4" />
                             <span>Son Güncelleme: {stats.last_checked ? new Date(stats.last_checked).toLocaleString('tr-TR') : 'Henüz yapılmadı'}</span>
                         </div>
+                        {stats.last_error && (
+                            <div className="mt-2 text-rose-500 font-bold text-xs bg-rose-50 px-3 py-1 rounded-lg border border-rose-100 inline-block">
+                                Error: {stats.last_error}
+                            </div>
+                        )}
                     </div>
                 </div>
 

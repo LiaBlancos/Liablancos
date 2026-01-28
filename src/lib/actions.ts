@@ -701,9 +701,9 @@ export async function getTrendyolOrders(
 ) {
     // 1. Get credentials
     const settings = await getSettings()
-    const sellerId = settings.find(s => s.key === 'trendyol_seller_id')?.value
-    const apiKey = settings.find(s => s.key === 'trendyol_api_key')?.value
-    const apiSecret = settings.find(s => s.key === 'trendyol_api_secret')?.value
+    const sellerId = settings.find(s => s.key === 'trendyol_seller_id')?.value?.trim()
+    const apiKey = settings.find(s => s.key === 'trendyol_api_key')?.value?.trim()
+    const apiSecret = settings.find(s => s.key === 'trendyol_api_secret')?.value?.trim()
 
     if (!sellerId || !apiKey || !apiSecret) {
         console.error('[Trendyol API] Credentials missing in settings table!', { sellerId: !!sellerId, apiKey: !!apiKey, apiSecret: !!apiSecret })
@@ -1005,12 +1005,13 @@ export async function getExtendedTrendyolReturns(page: number = 0, size: number 
 
 export async function syncTrendyolOrdersToDb() {
     try {
-        // Fetch last 30 days of orders to ensure we have them in DB
         const now = Date.now()
-        const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000)
+        const sixtyDaysAgo = now - (60 * 24 * 60 * 60 * 1000)
 
-        console.log('[LiaBlancos] Syncing Trendyol Orders to DB...')
-        const result = await getTrendyolOrders(['Shipped', 'Delivered', 'Returned', 'UnDelivered'], 0, 100, thirtyDaysAgo, now)
+        console.log('[LiaBlancos] Syncing Trendyol Orders to DB (ALL Statuses, 60 Days)...')
+        const result = await getTrendyolOrders(undefined, 0, 100, sixtyDaysAgo, now)
+
+        console.log(`[LiaBlancos] Order API Success: ${result.success}, Count: ${result.orders?.length || 0}`)
 
         if (!result.success || !result.orders) {
             throw new Error(result.error || 'Siparişler çekilemedi.')
@@ -1018,6 +1019,7 @@ export async function syncTrendyolOrdersToDb() {
 
         let savedCount = 0
         for (const order of result.orders) {
+            console.log(`[LiaBlancos] Processing Order: ${order.orderNumber}`)
             // Upsert shipment package
             const { data: pkg, error: pkgError } = await supabase
                 .from('shipment_packages')
@@ -1110,17 +1112,24 @@ export async function syncTrendyolPayments() {
             if (response.ok) {
                 const data = await response.json()
                 if (data.content) allTransactions = [...allTransactions, ...data.content]
+            } else {
+                const errorBody = await response.text()
+                console.error(`[LiaBlancos] Finance API Error (Chunk ${i}): ${response.status} - ${errorBody}`)
+                log.error = `API Error ${response.status}: ${errorBody}`
             }
         }
 
         const transactions = allTransactions
         log.pulled_count = transactions.length
+        console.log(`[LiaBlancos] Total Transactions Pulled: ${log.pulled_count}`)
 
         for (const tx of transactions) {
             const shipmentPackageId = tx.shipmentPackageId?.toString()
             const orderNumber = tx.orderNumber?.toString()
             const amount = tx.transactionAmount
             const reference = tx.transactionId?.toString()
+
+            console.log(`[LiaBlancos] Processing TX: ${reference}, Package: ${shipmentPackageId}, Order: ${orderNumber}`)
 
             // Try to find by shipmentPackageId
             let pkgFound = false
@@ -1129,10 +1138,11 @@ export async function syncTrendyolPayments() {
                     .from('shipment_packages')
                     .select('id, payment_status')
                     .eq('shipment_package_id', shipmentPackageId)
-                    .single()
+                    .maybeSingle()
 
                 if (pkg) {
                     pkgFound = true
+                    console.log(`[LiaBlancos] Match Found (Package ID): ${shipmentPackageId}`)
                     await supabase.from('shipment_packages').update({
                         payment_status: 'paid',
                         paid_at: new Date(tx.transactionDate).toISOString(),
@@ -1152,10 +1162,11 @@ export async function syncTrendyolPayments() {
                     .from('shipment_packages')
                     .select('id, payment_status')
                     .eq('order_number', orderNumber)
-                    .single()
+                    .maybeSingle()
 
                 if (pkg) {
                     pkgFound = true
+                    console.log(`[LiaBlancos] Match Found (Order No): ${orderNumber}`)
                     await supabase.from('shipment_packages').update({
                         payment_status: 'paid',
                         paid_at: new Date(tx.transactionDate).toISOString(),
@@ -1224,17 +1235,18 @@ export async function getPaymentStats() {
 
         const { data: lastLog } = await supabase
             .from('payment_sync_logs')
-            .select('run_at')
+            .select('run_at, error')
             .order('run_at', { ascending: false })
             .limit(1)
 
         return {
             paid: paidData?.length || 0,
             unpaid: unpaidData?.length || 0,
-            last_checked: lastLog?.[0]?.run_at || null
+            last_checked: lastLog?.[0]?.run_at || null,
+            last_error: lastLog?.[0]?.error || null
         }
     } catch (e) {
-        return { paid: 0, unpaid: 0, last_checked: null }
+        return { paid: 0, unpaid: 0, last_checked: null, last_error: null }
     }
 }
 
