@@ -42,6 +42,8 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
         try {
             const result = await syncTrendyolPayments()
             if (result.success) {
+                const log = result.log
+                alert(`Senkronizasyon Başarılı!\n\nÇekilen Ödeme: ${log.pulled_count}\nEşleşen: ${log.matched_count}\nEşleşmeyen: ${log.unmatched_count}`)
                 router.refresh()
             } else {
                 alert('Senkronizasyon hatası: ' + result.error)

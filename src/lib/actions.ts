@@ -1006,56 +1006,52 @@ export async function getExtendedTrendyolReturns(page: number = 0, size: number 
 export async function syncTrendyolOrdersToDb() {
     try {
         const now = Date.now()
-        const sixtyDaysAgo = now - (60 * 24 * 60 * 60 * 1000)
-
-        console.log('[LiaBlancos] Syncing Trendyol Orders to DB (ALL Statuses, 60 Days)...')
-        const result = await getTrendyolOrders(undefined, 0, 100, sixtyDaysAgo, now)
-
-        console.log(`[LiaBlancos] Order API Success: ${result.success}, Count: ${result.orders?.length || 0}`)
-
-        if (!result.success || !result.orders) {
-            throw new Error(result.error || 'Siparişler çekilemedi.')
-        }
+        const CHUNK_SIZE_MS = 14 * 24 * 60 * 60 * 1000
+        const chunkIndices = Array.from({ length: 4 }, (_, i) => i)
 
         let savedCount = 0
-        for (const order of result.orders) {
-            console.log(`[LiaBlancos] Processing Order: ${order.orderNumber}`)
-            // Upsert shipment package
-            const { data: pkg, error: pkgError } = await supabase
-                .from('shipment_packages')
-                .upsert({
-                    order_number: order.orderNumber,
-                    shipment_package_id: order.shipmentPackages?.[0]?.id?.toString() || null,
-                    customer_name: `${order.customerFirstName} ${order.customerLastName}`,
-                    total_price: order.totalPrice,
-                    order_date: new Date(order.orderDate).toISOString(),
-                    status: order.status,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'shipment_package_id' })
-                .select()
-                .maybeSingle()
+        console.log('[LiaBlancos] Starting Chunked Order Sync...')
 
-            if (pkgError) {
-                console.error(`Error saving package ${order.orderNumber}:`, pkgError)
+        for (const i of chunkIndices) {
+            const endDate = now - (i * CHUNK_SIZE_MS)
+            const startDate = endDate - CHUNK_SIZE_MS
+            const result = await getTrendyolOrders(undefined, 0, 100, startDate, endDate)
+
+            if (!result.success || !result.orders) {
+                console.warn(`[LiaBlancos] Order sync chunk ${i} skipped: ${result.error}`)
                 continue
             }
 
-            // Save items if package was saved
-            if (pkg && order.lines) {
-                // Clear existing items for this package to avoid duplicates on resync
-                await supabase.from('shipment_package_items').delete().eq('package_id', pkg.id)
+            for (const order of result.orders) {
+                const { data: pkg, error: pkgError } = await supabase
+                    .from('shipment_packages')
+                    .upsert({
+                        order_number: order.orderNumber,
+                        shipment_package_id: order.shipmentPackages?.[0]?.id?.toString() || null,
+                        customer_name: `${order.customerFirstName} ${order.customerLastName}`,
+                        total_price: order.totalPrice,
+                        order_date: new Date(order.orderDate).toISOString(),
+                        status: order.status,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'shipment_package_id' })
+                    .select('id')
+                    .maybeSingle()
 
-                const items = order.lines.map((line: any) => ({
-                    package_id: pkg.id,
-                    barcode: line.barcode,
-                    product_name: line.productName,
-                    quantity: line.quantity,
-                    price: line.price
-                }))
+                if (pkgError) continue
 
-                await supabase.from('shipment_package_items').insert(items)
+                if (pkg && order.lines) {
+                    await supabase.from('shipment_package_items').delete().eq('package_id', pkg.id)
+                    const items = order.lines.map((line: any) => ({
+                        package_id: pkg.id,
+                        barcode: line.barcode,
+                        product_name: line.productName,
+                        quantity: line.quantity,
+                        price: line.price
+                    }))
+                    await supabase.from('shipment_package_items').insert(items)
+                }
+                savedCount++
             }
-            savedCount++
         }
 
         console.log(`[LiaBlancos] Orders Sync Complete. Saved ${savedCount} packages.`)
@@ -1078,14 +1074,17 @@ export async function syncTrendyolPayments() {
     }
 
     try {
-        // 1. Sync orders first to make sure DB is up to date
-        await syncTrendyolOrdersToDb()
+        // 1. Sync orders first
+        const orderSync = await syncTrendyolOrdersToDb()
+        if (orderSync.error) {
+            throw new Error(`Sipariş senkronizasyonu hatası: ${orderSync.error}`)
+        }
 
-        // 2. Get credentials
+        // 2. Get credentials and trim
         const settings = await getSettings()
-        const sellerId = settings.find(s => s.key === 'trendyol_seller_id')?.value
-        const apiKey = settings.find(s => s.key === 'trendyol_api_key')?.value
-        const apiSecret = settings.find(s => s.key === 'trendyol_api_secret')?.value
+        const sellerId = settings.find(s => s.key === 'trendyol_seller_id')?.value?.trim()
+        const apiKey = settings.find(s => s.key === 'trendyol_api_key')?.value?.trim()
+        const apiSecret = settings.find(s => s.key === 'trendyol_api_secret')?.value?.trim()
 
         if (!sellerId || !apiKey || !apiSecret) {
             throw new Error('Trendyol API bilgileri eksik.')
