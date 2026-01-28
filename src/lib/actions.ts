@@ -375,7 +375,7 @@ export async function syncTrendyolProducts() {
             image_url: (p.images && p.images.length > 0)
                 ? (typeof p.images[0] === 'string' ? p.images[0] : (p.images[0].url || null))
                 : null,
-            is_active: p.active,
+            is_active: p.onSale,
             // quantity: p.quantity, -- Commented out to avoid overwriting local stock with Trendyol stock if WMS is source of truth
             updated_at: new Date().toISOString()
         }))
@@ -413,7 +413,7 @@ export async function getWholesalers() {
     return data
 }
 
-export async function createWholesaler(data: { name: string; phone?: string; note?: string }) {
+export async function createWholesaler(data: { name: string; phone?: string; address?: string; note?: string }) {
     const { data: newWholesaler, error } = await supabase
         .from('wholesalers')
         .insert([data])
@@ -429,7 +429,7 @@ export async function createWholesaler(data: { name: string; phone?: string; not
     return { success: true, wholesaler: newWholesaler }
 }
 
-export async function updateWholesaler(id: string, data: Partial<{ name: string; phone: string; note: string; is_active: boolean }>) {
+export async function updateWholesaler(id: string, data: Partial<{ name: string; phone: string; address: string; note: string; is_active: boolean }>) {
     const { error } = await supabase
         .from('wholesalers')
         .update(data)
@@ -447,7 +447,7 @@ export async function updateWholesaler(id: string, data: Partial<{ name: string;
 export async function getWholesalePrices(productId?: string) {
     let query = supabase
         .from('wholesale_prices')
-        .select('*, wholesalers(name)')
+        .select('*, wholesalers(name, phone, address, note, is_active)')
 
     if (productId) {
         query = query.eq('product_id', productId)

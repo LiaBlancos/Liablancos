@@ -77,6 +77,7 @@ create table if not exists wholesalers (
   id uuid default uuid_generate_v4() primary key,
   name text not null unique,
   phone text,
+  address text,
   note text,
   is_active boolean default true,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null

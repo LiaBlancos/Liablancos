@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from 'react'
 import { Product, Wholesaler, WholesalePrice } from '@/types'
-import { Search, Plus, RefreshCcw, CheckCircle2, AlertTriangle, Truck, Trash2, Edit2, Package, Save, X, Barcode, Tag, ExternalLink } from 'lucide-react'
-import { syncTrendyolProducts, createWholesaler, updateWholesalePrice, deleteWholesalePrice } from '@/lib/actions'
+import { Search, Plus, RefreshCcw, CheckCircle2, AlertTriangle, Truck, Trash2, Edit2, Package, Save, X, Barcode, Tag, ExternalLink, Phone, MapPin } from 'lucide-react'
+import { syncTrendyolProducts, createWholesaler, updateWholesaler, updateWholesalePrice, deleteWholesalePrice } from '@/lib/actions'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
@@ -22,7 +22,9 @@ export default function WholesalersContent({
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'passive'>('all')
     const [isSyncing, setIsSyncing] = useState(false)
     const [isWholesalerModalOpen, setIsWholesalerModalOpen] = useState(false)
-    const [wholesalerForm, setWholesalerForm] = useState({ name: '', phone: '', note: '' })
+    const [editingWholesaler, setEditingWholesaler] = useState<Wholesaler | null>(null)
+    const [wholesalerForm, setWholesalerForm] = useState({ name: '', phone: '', address: '', note: '' })
+    const [selectedWholesaler, setSelectedWholesaler] = useState<Wholesaler | null>(null)
     const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
     const router = useRouter()
 
@@ -66,87 +68,98 @@ export default function WholesalersContent({
         if (!wholesalerForm.name) return
 
         try {
-            const result = await createWholesaler(wholesalerForm)
+            let result;
+            if (editingWholesaler) {
+                result = await updateWholesaler(editingWholesaler.id, wholesalerForm)
+            } else {
+                result = await createWholesaler(wholesalerForm)
+            }
+
             if (result.success) {
                 setIsWholesalerModalOpen(false)
-                setWholesalerForm({ name: '', phone: '', note: '' })
+                setEditingWholesaler(null)
+                setWholesalerForm({ name: '', phone: '', address: '', note: '' })
                 router.refresh()
             } else {
-                alert(result.error)
+                if (result.error?.includes('duplicate key')) {
+                    alert('Bu isimde bir toptancı zaten kayıtlı. Mevcut toptancıyı düzenleyebilir veya farklı bir isim seçebilirsiniz.')
+                } else {
+                    alert(result.error)
+                }
             }
         } catch (e) {
-            alert('Toptancı eklenirken hata oluştu.')
+            alert('Toptancı kaydedilirken hata oluştu.')
         }
     }
 
     return (
-        <div className="space-y-6 pb-20">
-            {/* Header Area */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+        <div className="space-y-8 pb-12 animate-fade">
+            {/* Header Area - Perfect Match with Trendyol Style */}
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+                <div className="flex items-center gap-4 shrink-0">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/20">
                         <Truck className="w-7 h-7 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-black text-zinc-900 tracking-tight">Toptancılar</h1>
+                        <h1 className="text-2xl font-black text-zinc-900 tracking-tight leading-none mb-1">Toptancılar</h1>
                         <p className="text-zinc-500 text-sm font-medium">{initialProducts.length} ürün listeleniyor</p>
                     </div>
                 </div>
 
-                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4">
-                    {/* Status Toggle - Trendyol Style */}
-                    <div className="flex bg-zinc-100 p-1 rounded-2xl">
-                        <button
-                            onClick={() => setStatusFilter('all')}
-                            className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${statusFilter === 'all'
-                                ? 'bg-white text-zinc-900 shadow-md shadow-zinc-200/50'
-                                : 'text-zinc-500 hover:text-zinc-700'
-                                }`}
-                        >
-                            Hepsi
-                        </button>
-                        <button
-                            onClick={() => setStatusFilter('active')}
-                            className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${statusFilter === 'active'
-                                ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
-                                : 'text-zinc-500 hover:text-zinc-700'
-                                }`}
-                        >
-                            Aktif
-                        </button>
-                        <button
-                            onClick={() => setStatusFilter('passive')}
-                            className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${statusFilter === 'passive'
-                                ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
-                                : 'text-zinc-500 hover:text-zinc-700'
-                                }`}
-                        >
-                            Pasif
-                        </button>
-                    </div>
+                {/* Status Toggle - Centered on Desktop */}
+                <div className="flex bg-zinc-100 p-1 rounded-2xl self-start md:self-auto">
+                    <button
+                        onClick={() => setStatusFilter('all')}
+                        className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${statusFilter === 'all'
+                            ? 'bg-white text-zinc-900 shadow-md shadow-zinc-200/50'
+                            : 'text-zinc-500 hover:text-zinc-700'
+                            }`}
+                    >
+                        Hepsi
+                    </button>
+                    <button
+                        onClick={() => setStatusFilter('active')}
+                        className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${statusFilter === 'active'
+                            ? 'bg-white text-emerald-600 shadow-md shadow-zinc-200/50'
+                            : 'text-zinc-500 hover:text-zinc-700'
+                            }`}
+                    >
+                        Aktif
+                    </button>
+                    <button
+                        onClick={() => setStatusFilter('passive')}
+                        className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${statusFilter === 'passive'
+                            ? 'bg-white text-rose-600 shadow-md shadow-zinc-200/50'
+                            : 'text-zinc-500 hover:text-zinc-700'
+                            }`}
+                    >
+                        Pasif
+                    </button>
+                </div>
 
+                <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 flex-1 xl:flex-none justify-end">
+                    <div className="relative w-full md:w-64 lg:w-72">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                        <input
+                            type="text"
+                            placeholder="Ürün veya barkod ara..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-4 py-3 bg-white border border-zinc-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all shadow-sm"
+                        />
+                    </div>
                     <div className="flex items-center gap-3">
-                        <div className="relative flex-1 md:w-64">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                            <input
-                                type="text"
-                                placeholder="Ürün veya barkod ara..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-3 bg-white border border-zinc-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
-                            />
-                        </div>
                         <button
                             onClick={handleSync}
                             disabled={isSyncing}
-                            className="flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-zinc-800 transition-all shadow-md shadow-zinc-900/10 active:scale-95 disabled:opacity-50"
+                            className="flex-1 md:flex-none flex items-center gap-2 px-6 py-3 bg-zinc-900 text-white text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-zinc-800 transition-all shadow-md shadow-zinc-900/10 active:scale-95 disabled:opacity-50 h-[46px]"
                         >
                             <RefreshCcw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
                             Senkronla
                         </button>
                         <button
                             onClick={() => setIsWholesalerModalOpen(true)}
-                            className="p-3 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-600/20 active:scale-95"
+                            className="p-3 bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-600/20 active:scale-95 w-[46px] h-[46px] flex items-center justify-center shrink-0"
                             title="Toptancı Ekle"
                         >
                             <Plus className="w-5 h-5" />
@@ -174,6 +187,10 @@ export default function WholesalersContent({
                         product={product}
                         wholesalers={initialWholesalers}
                         prices={initialPrices.filter(p => p.product_id === product.id)}
+                        onShowWholesaler={(name) => {
+                            const w = initialWholesalers.find(wh => wh.name === name)
+                            if (w) setSelectedWholesaler(w)
+                        }}
                     />
                 ))}
             </div>
@@ -193,8 +210,14 @@ export default function WholesalersContent({
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                     <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
-                            <h3 className="text-xl font-black text-zinc-900 tracking-tight">Yeni Toptancı Ekle</h3>
-                            <button onClick={() => setIsWholesalerModalOpen(false)} className="p-2 rounded-xl hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors">
+                            <h3 className="text-xl font-black text-zinc-900 tracking-tight">
+                                {editingWholesaler ? 'Toptancı Düzenle' : 'Yeni Toptancı Ekle'}
+                            </h3>
+                            <button onClick={() => {
+                                setIsWholesalerModalOpen(false)
+                                setEditingWholesaler(null)
+                                setWholesalerForm({ name: '', phone: '', address: '', note: '' })
+                            }} className="p-2 rounded-xl hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -221,11 +244,20 @@ export default function WholesalersContent({
                                 />
                             </div>
                             <div>
+                                <label className="block text-[10px] font-black uppercase text-zinc-400 mb-2 tracking-widest ml-1">Adres</label>
+                                <textarea
+                                    value={wholesalerForm.address}
+                                    onChange={e => setWholesalerForm({ ...wholesalerForm, address: e.target.value })}
+                                    className="w-full px-5 py-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm outline-none h-24 resize-none"
+                                    placeholder="Mahalle, Sokak, No..."
+                                />
+                            </div>
+                            <div>
                                 <label className="block text-[10px] font-black uppercase text-zinc-400 mb-2 tracking-widest ml-1">Notlar</label>
                                 <textarea
                                     value={wholesalerForm.note}
                                     onChange={e => setWholesalerForm({ ...wholesalerForm, note: e.target.value })}
-                                    className="w-full px-5 py-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm outline-none h-28 resize-none"
+                                    className="w-full px-5 py-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm outline-none h-24 resize-none"
                                     placeholder="Bu toptancı hakkında notlar..."
                                 />
                             </div>
@@ -239,16 +271,102 @@ export default function WholesalersContent({
                     </div>
                 </div>
             )}
+            {/* Wholesaler Details Modal */}
+            {selectedWholesaler && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-8 border-b border-zinc-100 flex justify-between items-start bg-zinc-50/50">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-indigo-100 flex items-center justify-center">
+                                    <Truck className="w-6 h-6 text-indigo-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-black text-zinc-900 tracking-tight leading-tight">{selectedWholesaler.name}</h3>
+                                    <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mt-1">Toptancı Detayları</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        setEditingWholesaler(selectedWholesaler)
+                                        setWholesalerForm({
+                                            name: selectedWholesaler.name,
+                                            phone: selectedWholesaler.phone || '',
+                                            address: selectedWholesaler.address || '',
+                                            note: selectedWholesaler.note || ''
+                                        })
+                                        setIsWholesalerModalOpen(true)
+                                        setSelectedWholesaler(null)
+                                    }}
+                                    className="p-2.5 rounded-xl bg-white border border-zinc-200 text-zinc-600 hover:border-indigo-500 hover:text-indigo-600 transition-all shadow-sm"
+                                    title="Düzenle"
+                                >
+                                    <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => setSelectedWholesaler(null)} className="p-2 rounded-xl hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="p-8 space-y-6">
+                            {selectedWholesaler.phone && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Telefon</label>
+                                    <a
+                                        href={`tel:${selectedWholesaler.phone}`}
+                                        className="flex items-center gap-3 p-4 bg-zinc-50 rounded-2xl border border-zinc-100 hover:border-indigo-200 hover:bg-indigo-50 group transition-all"
+                                    >
+                                        <div className="w-10 h-10 rounded-xl bg-white border border-zinc-100 flex items-center justify-center group-hover:border-indigo-100">
+                                            <Phone className="w-4 h-4 text-zinc-600 group-hover:text-indigo-600" />
+                                        </div>
+                                        <span className="text-lg font-black text-zinc-900 group-hover:text-indigo-700">{selectedWholesaler.phone}</span>
+                                    </a>
+                                </div>
+                            )}
+
+                            {selectedWholesaler.address && (
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Adres</label>
+                                    <a
+                                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedWholesaler.address)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-3 p-4 bg-zinc-50 rounded-2xl border border-zinc-100 hover:border-emerald-200 hover:bg-emerald-50 group transition-all"
+                                    >
+                                        <div className="w-10 h-10 rounded-xl bg-white border border-zinc-100 flex items-center justify-center group-hover:border-emerald-100">
+                                            <MapPin className="w-4 h-4 text-zinc-600 group-hover:text-emerald-600" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-bold text-zinc-900 group-hover:text-emerald-700 line-clamp-2">{selectedWholesaler.address}</p>
+                                            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-tight mt-0.5">Haritada Gör</p>
+                                        </div>
+                                    </a>
+                                </div>
+                            )}
+
+                            {!selectedWholesaler.phone && !selectedWholesaler.address && (
+                                <div className="p-8 text-center bg-zinc-50 rounded-3xl border border-dashed border-zinc-200">
+                                    <AlertTriangle className="w-8 h-8 text-zinc-200 mx-auto mb-3" />
+                                    <p className="text-sm font-bold text-zinc-400">Bu toptancı için telefon veya adres bilgisi kaydedilmemiş.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
 
-function ProductPriceCard({ product, wholesalers, prices }: {
+function ProductPriceCard({ product, wholesalers, prices, onShowWholesaler }: {
     product: Product,
     wholesalers: Wholesaler[],
-    prices: WholesalePrice[]
+    prices: WholesalePrice[],
+    onShowWholesaler: (name: string) => void
 }) {
     const [isAddingPrice, setIsAddingPrice] = useState(false)
+    const [editingPriceId, setEditingPriceId] = useState<string | null>(null)
+    const [editValue, setEditValue] = useState<number>(0)
     const [newPrice, setNewPrice] = useState({ wholesaler_id: '', buy_price: 0, currency: 'TRY' })
     const [isSaving, setIsSaving] = useState(false)
     const router = useRouter()
@@ -270,6 +388,7 @@ function ProductPriceCard({ product, wholesalers, prices }: {
             })
             if (result.success) {
                 setIsAddingPrice(false)
+                setEditingPriceId(null)
                 setNewPrice({ wholesaler_id: '', buy_price: 0, currency: 'TRY' })
                 router.refresh()
             } else {
@@ -363,7 +482,7 @@ function ProductPriceCard({ product, wholesalers, prices }: {
                 </div>
 
                 {/* Wholesaler Prices List - Enhanced */}
-                <div className="mt-8 space-y-4">
+                <div className="mt-4 space-y-4">
                     <div className="flex items-center justify-between">
                         <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Toptancı Fiyatları</h4>
                         <button
@@ -413,18 +532,60 @@ function ProductPriceCard({ product, wholesalers, prices }: {
                     <div className="space-y-2">
                         {prices.map(price => (
                             <div key={price.id} className="group/price flex items-center justify-between p-4 bg-zinc-50/50 rounded-2xl border border-zinc-100/50 hover:bg-white hover:border-zinc-200 transition-all">
-                                <div className="min-w-0">
-                                    <p className="text-sm font-bold text-zinc-800 truncate">{price.wholesalers?.name}</p>
+                                <div className="min-w-0 flex-1">
+                                    <button
+                                        onClick={() => onShowWholesaler(price.wholesalers?.name || '')}
+                                        className="text-sm font-bold text-zinc-800 truncate hover:text-indigo-600 transition-colors block text-left w-full"
+                                    >
+                                        {price.wholesalers?.name}
+                                    </button>
                                     <p className="text-[10px] font-medium text-zinc-400 mt-0.5">{new Date(price.last_updated_at).toLocaleDateString('tr-TR')}</p>
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <span className="text-sm font-black text-zinc-900">{price.buy_price.toLocaleString('tr-TR')} TL</span>
-                                    <button
-                                        onClick={() => handleDeletePrice(price.wholesaler_id)}
-                                        className="p-1.5 text-zinc-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover/price:opacity-100"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
+                                <div className="flex items-center gap-3">
+                                    {editingPriceId === price.id ? (
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                autoFocus
+                                                type="number"
+                                                value={editValue}
+                                                onChange={e => setEditValue(parseFloat(e.target.value))}
+                                                className="w-20 px-2 py-1 text-sm font-black border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                                            />
+                                            <button
+                                                onClick={() => handleSavePrice(price.wholesaler_id, editValue)}
+                                                className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                                            >
+                                                <Save className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={() => setEditingPriceId(null)}
+                                                className="p-1 text-zinc-400 hover:bg-zinc-100 rounded-lg transition-all"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <span className="text-sm font-black text-zinc-900">{price.buy_price.toLocaleString('tr-TR')} TL</span>
+                                            <div className="flex items-center gap-1 opacity-0 group-hover/price:opacity-100 transition-opacity">
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingPriceId(price.id)
+                                                        setEditValue(price.buy_price)
+                                                    }}
+                                                    className="p-1.5 text-zinc-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeletePrice(price.wholesaler_id)}
+                                                    className="p-1.5 text-zinc-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         ))}

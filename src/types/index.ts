@@ -35,6 +35,7 @@ export type Wholesaler = {
     id: string
     name: string
     phone: string | null
+    address: string | null
     note: string | null
     is_active: boolean
     created_at: string

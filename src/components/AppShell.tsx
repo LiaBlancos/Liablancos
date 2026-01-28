@@ -134,7 +134,7 @@ export default function AppShell({ children }: AppShellProps) {
     }
 
     return (
-        <div className="min-h-screen bg-zinc-50/50 flex">
+        <div className="min-h-screen bg-zinc-50/50">
             {/* Desktop Sidebar - Premium Glass Effect */}
             <aside className="hidden md:flex flex-col w-72 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-white h-screen fixed left-0 top-0 z-30">
                 {/* Logo Area */}
@@ -300,8 +300,7 @@ export default function AppShell({ children }: AppShellProps) {
                 </div>
             </aside>
 
-            {/* Desktop Sidebar Spacer */}
-            <div className="hidden md:block w-72 shrink-0" />
+            {/* Content Area Offset by Sidebar Width */}
 
             {/* Mobile Header - Premium */}
             <div className="md:hidden bg-white/80 backdrop-blur-xl border-b border-zinc-200/50 p-4 sticky top-0 z-40 flex justify-between items-center w-full">
@@ -530,8 +529,8 @@ export default function AppShell({ children }: AppShellProps) {
                 </div>
             )}
 
-            <main className="flex-1 min-h-screen">
-                <div className="p-4 md:p-10 animate-fade">
+            <main className="md:ml-72 min-h-screen">
+                <div className="w-full p-4 md:p-8 animate-fade">
                     {children}
                 </div>
             </main>
