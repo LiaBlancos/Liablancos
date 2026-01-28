@@ -742,7 +742,7 @@ export async function getTrendyolOrders(
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`[Trendyol API Error] ${response.status}:`, errorText);
-            throw new Error(`Trendyol Hatası (${response.status})`);
+            throw new Error(`Trendyol Hatası (${response.status}) ${errorText}`);
         }
 
         const data = await response.json()
@@ -1033,7 +1033,7 @@ export async function syncTrendyolOrdersToDb() {
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'shipment_package_id' })
                 .select()
-                .single()
+                .maybeSingle()
 
             if (pkgError) {
                 console.error(`Error saving package ${order.orderNumber}:`, pkgError)
