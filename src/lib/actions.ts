@@ -1006,7 +1006,7 @@ export async function getExtendedTrendyolReturns(page: number = 0, size: number 
 export async function syncTrendyolOrdersToDb() {
     try {
         const now = Date.now()
-        const CHUNK_SIZE_MS = 14 * 24 * 60 * 60 * 1000
+        const CHUNK_SIZE_MS = 13 * 24 * 60 * 60 * 1000 // Trendyol limit is 14 days (336 hours)
         const chunkIndices = Array.from({ length: 4 }, (_, i) => i)
 
         let savedCount = 0
@@ -1092,7 +1092,7 @@ export async function syncTrendyolPayments() {
 
         const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
         const now = Date.now()
-        const CHUNK_SIZE_MS = 15 * 24 * 60 * 60 * 1000
+        const CHUNK_SIZE_MS = 13 * 24 * 60 * 60 * 1000 // Trendyol limit is 14 days (336 hours)
         const chunkIndices = Array.from({ length: 6 }, (_, i) => i)
         let allTransactions: any[] = []
 
@@ -1222,14 +1222,14 @@ export async function syncTrendyolPayments() {
 
 export async function getPaymentStats() {
     try {
-        const { data: paidData } = await supabase
+        const { count: paidCount } = await supabase
             .from('shipment_packages')
-            .select('id', { count: 'exact', head: true })
+            .select('*', { count: 'exact', head: true })
             .eq('payment_status', 'paid')
 
-        const { data: unpaidData } = await supabase
+        const { count: unpaidCount } = await supabase
             .from('shipment_packages')
-            .select('id', { count: 'exact', head: true })
+            .select('*', { count: 'exact', head: true })
             .eq('payment_status', 'unpaid')
 
         const { data: lastLog } = await supabase
@@ -1239,8 +1239,8 @@ export async function getPaymentStats() {
             .limit(1)
 
         return {
-            paid: paidData?.length || 0,
-            unpaid: unpaidData?.length || 0,
+            paid: paidCount || 0,
+            unpaid: unpaidCount || 0,
             last_checked: lastLog?.[0]?.run_at || null,
             last_error: lastLog?.[0]?.error || null
         }
