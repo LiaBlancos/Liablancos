@@ -471,53 +471,103 @@ export async function updateWholesalePrice(data: {
 }) {
     const { data: { user } } = await supabase.auth.getUser()
 
-    // 1. Upsert price
-    const { error: priceError } = await supabase
-        .from('wholesale_prices')
-        .upsert({
-            product_id: data.product_id,
+    try {
+        // 1. Get the SKU of the source product
+        const { data: sourceProduct } = await supabase
+            .from('products')
+            .select('sku')
+            .eq('id', data.product_id)
+            .single()
+
+        // 2. Find all products with the same SKU (if SKU exists)
+        let productIds = [data.product_id]
+        if (sourceProduct?.sku) {
+            const { data: relatedProducts } = await supabase
+                .from('products')
+                .select('id')
+                .eq('sku', sourceProduct.sku)
+
+            if (relatedProducts) {
+                productIds = relatedProducts.map(p => p.id)
+            }
+        }
+
+        // 3. Upsert prices for all matching products
+        const upsertData = productIds.map(pid => ({
+            product_id: pid,
             wholesaler_id: data.wholesaler_id,
             buy_price: data.buy_price,
             currency: data.currency || 'TRY',
             last_updated_at: new Date().toISOString()
-        }, { onConflict: 'product_id,wholesaler_id' })
+        }))
 
-    if (priceError) {
-        console.error('Error updating wholesale price:', priceError)
-        return { error: priceError.message }
-    }
+        const { error: priceError } = await supabase
+            .from('wholesale_prices')
+            .upsert(upsertData, { onConflict: 'product_id,wholesaler_id' })
 
-    // 2. Log change if price is different
-    if (data.old_price === undefined || data.old_price !== data.buy_price) {
-        await supabase
-            .from('price_change_logs')
-            .insert({
-                product_id: data.product_id,
+        if (priceError) throw priceError
+
+        // 4. Log changes for all matching products (if price changed)
+        if (data.old_price === undefined || data.old_price !== data.buy_price) {
+            const logData = productIds.map(pid => ({
+                product_id: pid,
                 wholesaler_id: data.wholesaler_id,
                 old_price: data.old_price,
                 new_price: data.buy_price,
                 currency: data.currency || 'TRY',
                 changed_by: user?.id
-            })
-    }
+            }))
 
-    revalidatePath('/urun-islemleri/toptancilar')
-    return { success: true }
+            await supabase
+                .from('price_change_logs')
+                .insert(logData)
+        }
+
+        revalidatePath('/urun-islemleri/toptancilar')
+        return { success: true }
+    } catch (error: any) {
+        console.error('Error updating SKU wholesale prices:', error)
+        return { error: error.message }
+    }
 }
 
 export async function deleteWholesalePrice(productId: string, wholesalerId: string) {
-    const { error } = await supabase
-        .from('wholesale_prices')
-        .delete()
-        .match({ product_id: productId, wholesaler_id: wholesalerId })
+    try {
+        // 1. Get the SKU of the source product
+        const { data: sourceProduct } = await supabase
+            .from('products')
+            .select('sku')
+            .eq('id', productId)
+            .single()
 
-    if (error) {
-        console.error('Error deleting wholesale price:', error)
+        // 2. Find all products with the same SKU
+        let productIds = [productId]
+        if (sourceProduct?.sku) {
+            const { data: relatedProducts } = await supabase
+                .from('products')
+                .select('id')
+                .eq('sku', sourceProduct.sku)
+
+            if (relatedProducts) {
+                productIds = relatedProducts.map(p => p.id)
+            }
+        }
+
+        // 3. Delete prices for all matching products
+        const { error } = await supabase
+            .from('wholesale_prices')
+            .delete()
+            .in('product_id', productIds)
+            .eq('wholesaler_id', wholesalerId)
+
+        if (error) throw error
+
+        revalidatePath('/urun-islemleri/toptancilar')
+        return { success: true }
+    } catch (error: any) {
+        console.error('Error deleting SKU wholesale prices:', error)
         return { error: error.message }
     }
-
-    revalidatePath('/urun-islemleri/toptancilar')
-    return { success: true }
 }
 
 export async function updateDamagedStock(
