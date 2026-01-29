@@ -1467,11 +1467,22 @@ export async function importOrderExcel(formData: FormData) {
 
         console.log(`[Order Excel Import] Processing ${jsonData.length} rows...`)
 
+        // DEBUG: Log first row to see column names
+        if (jsonData.length > 0) {
+            console.log('[Order Excel Import] First row columns:', Object.keys(jsonData[0]))
+            console.log('[Order Excel Import] First row data:', jsonData[0])
+        }
+
         // 1. Group rows by Order Number (UNIQUE KEY)
         for (const r of jsonData) {
             const row = r as any
             const orderNumber = row['Sipariş Numarası']?.toString() || row['Order Number']?.toString()
-            if (!orderNumber) continue // Skip rows without order number
+
+            // DEBUG: Log if order number not found
+            if (!orderNumber) {
+                console.log('[Order Excel Import] Skipping row - no order number:', Object.keys(row))
+                continue
+            }
 
             const packageId = row['Paket No']?.toString() || row['Paket Numarası']?.toString() || null
             const status = row['Sipariş Statüsü'] || row['Satır Statüsü'] || row['Status'] || ''
