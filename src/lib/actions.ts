@@ -1441,6 +1441,118 @@ export async function importPaymentExcel(formData: FormData) {
     }
 }
 
+export async function importOrderExcel(formData: FormData) {
+    try {
+        const file = formData.get('file') as File
+        if (!file) throw new Error('Dosya yüklenemedi.')
+
+        const buffer = await file.arrayBuffer()
+        const workbook = XLSX.read(buffer, { type: 'buffer' })
+        const sheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[sheetName]
+        const jsonData = XLSX.utils.sheet_to_json(worksheet)
+
+        let processedCount = 0
+        const packages = new Map<string, {
+            orderNumber: string
+            customerName: string
+            totalPrice: number
+            orderDate: string
+            status: string
+            items: any[]
+        }>()
+
+        console.log(`[Order Excel Import] Processing ${jsonData.length} rows...`)
+
+        // 1. Group rows by Package ID (or Order Number if Packet ID missing)
+        for (const r of jsonData) {
+            const row = r as any
+            const orderNumber = row['Sipariş Numarası']?.toString() || row['Order Number']?.toString()
+            const packageId = row['Paket Numarası']?.toString() || row['Teslimat No']?.toString() || row['Shipment Package ID']?.toString() || orderNumber // Fallback to Order Number
+            const status = row['Satır Statüsü'] || row['Status'] || row['Durum']
+
+            // Item details
+            const productName = row['Ürün Adı'] || row['Product Name']
+            const barcode = row['Barkod'] || row['Barcode']
+            const quantity = parseInt(row['Adet'] || row['Quantity'] || '1')
+            const price = parseFloat(row['Birim Satış Fiyatı (KDV Dahil)'] || row['Satış Fiyatı'] || row['Price'] || '0')
+            const customer = row['Müşteri Adı'] || row['Customer Name']
+            const date = row['Sipariş Tarihi'] || row['Order Date']
+            const total = parseFloat(row['Sipariş Tutarı'] || row['Order Total'] || '0')
+
+            if (!packageId) continue
+
+            if (!packages.has(packageId)) {
+                packages.set(packageId, {
+                    orderNumber: orderNumber || packageId,
+                    customerName: customer,
+                    totalPrice: total, // Note: Excel usually has total per order, not package. We might overwrite.
+                    orderDate: date ? new Date(date).toISOString() : new Date().toISOString(),
+                    status: status,
+                    items: []
+                })
+            }
+
+            // Add item to package
+            if (productName) {
+                packages.get(packageId)?.items.push({
+                    product_name: productName,
+                    barcode: barcode,
+                    quantity: quantity,
+                    price: price
+                })
+            }
+        }
+
+        console.log(`[Order Excel Import] Found ${packages.size} unique packages. Saving...`)
+
+        // 2. Save to DB
+        for (const [pkgId, data] of packages) {
+            // Upsert Package
+            const { data: pkg, error: pkgError } = await supabase
+                .from('shipment_packages')
+                .upsert({
+                    order_number: data.orderNumber,
+                    shipment_package_id: pkgId,
+                    customer_name: data.customerName,
+                    total_price: data.totalPrice,
+                    order_date: data.orderDate,
+                    status: data.status,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'shipment_package_id' })
+                .select('id')
+                .maybeSingle()
+
+            if (pkgError) {
+                console.error(`Error saving package ${pkgId}:`, pkgError)
+                continue
+            }
+
+            if (pkg && data.items.length > 0) {
+                // Replace items
+                await supabase.from('shipment_package_items').delete().eq('package_id', pkg.id)
+
+                const itemsToInsert = data.items.map(item => ({
+                    package_id: pkg.id,
+                    ...item
+                }))
+
+                const { error: itemsError } = await supabase.from('shipment_package_items').insert(itemsToInsert)
+                if (itemsError) console.error(`Error saving items for ${pkgId}:`, itemsError)
+            }
+
+            processedCount++
+        }
+
+        revalidatePath('/finans/odemeler')
+        return { success: true, count: processedCount }
+
+    } catch (error: any) {
+        console.error('Order Excel import error:', error)
+        return { error: error.message }
+    }
+}
+
 export async function getUnmatchedPayments() {
     try {
         const { data, error } = await supabase

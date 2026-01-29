@@ -109,7 +109,47 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {/* Excel Upload */}
+                    {/* Order Excel Upload */}
+                    <label className={cn(
+                        "px-4 py-4 rounded-3xl font-bold text-sm bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100 transition-colors cursor-pointer flex items-center gap-2",
+                        isSyncing && "opacity-50 pointer-events-none"
+                    )}>
+                        <input
+                            type="file"
+                            accept=".xlsx, .xls"
+                            className="hidden"
+                            onChange={async (e) => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                if (!confirm(`${file.name} sipariş dosyasını yüklemek istiyor musunuz?`)) return
+
+                                setIsSyncing(true)
+                                try {
+                                    const { importOrderExcel } = await import('@/lib/actions')
+                                    const formData = new FormData()
+                                    formData.append('file', file)
+
+                                    const result = await importOrderExcel(formData)
+
+                                    if (result.success) {
+                                        alert(`Sipariş Excel Yükleme Başarılı!\n\nOluşturulan/Güncellenen Paket: ${result.count}`)
+                                        router.refresh()
+                                    } else {
+                                        alert('Excel yükleme hatası: ' + result.error)
+                                    }
+                                } catch (error: any) {
+                                    alert('Hata: ' + error.message)
+                                } finally {
+                                    setIsSyncing(false)
+                                    e.target.value = ''
+                                }
+                            }}
+                        />
+                        <Package className="w-5 h-5" />
+                        Sipariş Yükle
+                    </label>
+
+                    {/* Payment Excel Upload */}
                     <label className={cn(
                         "px-4 py-4 rounded-3xl font-bold text-sm bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 transition-colors cursor-pointer flex items-center gap-2",
                         isSyncing && "opacity-50 pointer-events-none"
@@ -121,7 +161,7 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                             onChange={async (e) => {
                                 const file = e.target.files?.[0]
                                 if (!file) return
-                                if (!confirm(`${file.name} dosyasını yüklemek istiyor musunuz?`)) return
+                                if (!confirm(`${file.name} ödeme dosyasını yüklemek istiyor musunuz?`)) return
 
                                 setIsSyncing(true)
                                 try {
@@ -132,7 +172,7 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                                     const result = await importPaymentExcel(formData)
 
                                     if (result.success) {
-                                        alert(`Excel Yükleme Başarılı!\n\nİşlenen Satır: ${result.processed}\nEşleşen Sipariş: ${result.matched}\nEşleşmeyen: ${result.unmatched}`)
+                                        alert(`Ödeme Excel Yükleme Başarılı!\n\nİşlenen Satır: ${result.processed}\nEşleşen Sipariş: ${result.matched}\nEşleşmeyen: ${result.unmatched}`)
                                         router.refresh()
                                     } else {
                                         alert('Excel yükleme hatası: ' + result.error)
@@ -141,12 +181,12 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                                     alert('Hata: ' + error.message)
                                 } finally {
                                     setIsSyncing(false)
-                                    e.target.value = '' // Reset input
+                                    e.target.value = ''
                                 }
                             }}
                         />
                         <Upload className="w-5 h-5" />
-                        Excel Yükle
+                        Ödeme Yükle
                     </label>
 
                     {/* Reset Button */}
