@@ -1465,6 +1465,50 @@ export async function importOrderExcel(formData: FormData) {
             items: any[]
         }>()
 
+        // Helper function to safely parse Excel dates
+        const parseExcelDate = (value: any): string | null => {
+            if (!value) return null
+
+            try {
+                // If it's already a Date object
+                if (value instanceof Date) {
+                    return value.toISOString()
+                }
+
+                // If it's an Excel serial number (number of days since 1900-01-01)
+                if (typeof value === 'number') {
+                    const excelEpoch = new Date(1900, 0, 1)
+                    const days = value - 2 // Excel incorrectly treats 1900 as leap year
+                    const date = new Date(excelEpoch.getTime() + days * 24 * 60 * 60 * 1000)
+                    return date.toISOString()
+                }
+
+                // If it's a string, try to parse it
+                if (typeof value === 'string') {
+                    // Try direct parsing first
+                    const parsed = new Date(value)
+                    if (!isNaN(parsed.getTime())) {
+                        return parsed.toISOString()
+                    }
+
+                    // Try DD.MM.YYYY format (Turkish)
+                    const parts = value.split('.')
+                    if (parts.length === 3) {
+                        const [day, month, year] = parts.map(p => parseInt(p))
+                        const date = new Date(year, month - 1, day)
+                        if (!isNaN(date.getTime())) {
+                            return date.toISOString()
+                        }
+                    }
+                }
+
+                return null
+            } catch (e) {
+                console.error('Date parsing error:', e, value)
+                return null
+            }
+        }
+
         // Helper function to find column value with multiple possible names
         const getColumnValue = (row: any, possibleNames: string[]): any => {
             for (const name of possibleNames) {
@@ -1515,15 +1559,22 @@ export async function importOrderExcel(formData: FormData) {
                 'Tutar'
             ]) || '0')
             const customer = getColumnValue(row, ['Müşteri Adı', 'Customer Name', 'Alıcı']) || ''
-            const orderDate = getColumnValue(row, ['Sipariş Tarihi', 'Order Date']) || new Date().toISOString()
+            const orderDateRaw = getColumnValue(row, ['Sipariş Tarihi', 'Order Date'])
+            const orderDate = parseExcelDate(orderDateRaw) || new Date().toISOString()
             const total = parseFloat(getColumnValue(row, ['Sipariş Tutarı', 'Order Total', 'Toplam']) || '0')
 
             // Calculate due_at if order is delivered
             let dueAt: string | null = null
-            if (deliveryDate && (status === 'Teslim Edildi' || status === 'Delivered' || status.includes('Teslim'))) {
-                const deliveryDateObj = new Date(deliveryDate)
-                deliveryDateObj.setDate(deliveryDateObj.getDate() + 28) // Add 28 days
-                dueAt = deliveryDateObj.toISOString()
+            let deliveryDateParsed: string | null = null
+
+            if (deliveryDate) {
+                deliveryDateParsed = parseExcelDate(deliveryDate)
+
+                if (deliveryDateParsed && (status === 'Teslim Edildi' || status === 'Delivered' || status.includes('Teslim'))) {
+                    const deliveryDateObj = new Date(deliveryDateParsed)
+                    deliveryDateObj.setDate(deliveryDateObj.getDate() + 28) // Add 28 days
+                    dueAt = deliveryDateObj.toISOString()
+                }
             }
 
             if (!orders.has(orderNumber)) {
@@ -1532,8 +1583,8 @@ export async function importOrderExcel(formData: FormData) {
                     packageId,
                     customerName: customer,
                     totalPrice: total,
-                    orderDate: orderDate ? new Date(orderDate).toISOString() : new Date().toISOString(),
-                    deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
+                    orderDate: orderDate,
+                    deliveryDate: deliveryDateParsed,
                     status,
                     dueAt,
                     items: []
@@ -1541,8 +1592,8 @@ export async function importOrderExcel(formData: FormData) {
             } else {
                 // Update delivery info if this row has more recent data
                 const existing = orders.get(orderNumber)!
-                if (deliveryDate && !existing.deliveryDate) {
-                    existing.deliveryDate = new Date(deliveryDate).toISOString()
+                if (deliveryDateParsed && !existing.deliveryDate) {
+                    existing.deliveryDate = deliveryDateParsed
                     existing.status = status
                     existing.dueAt = dueAt
                 }
