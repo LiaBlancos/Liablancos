@@ -1716,6 +1716,8 @@ export async function importOrderExcel(formData: FormData) {
         revalidatePath('/finans/odemeler')
         return {
             success: true,
+            count: processedCount,
+            debug: debugInfo,
             skipped: skippedCount,
             totalRows: jsonData.length
         }
