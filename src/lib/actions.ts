@@ -1477,13 +1477,8 @@ export async function importOrderExcel(formData: FormData) {
 
         console.log(`[Order Excel Import] Processing ${jsonData.length} rows...`)
 
-        // DEBUG: Log first row to see column names
-        let debugInfo = ''
-        if (jsonData.length > 0) {
-            const firstRowKeys = Object.keys(jsonData[0] as any)
-            debugInfo = `Excel Kolonları: ${firstRowKeys.join(', ')}`
-            console.log('[Order Excel Import] Columns found:', firstRowKeys)
-        }
+        // Prepare debug info
+        let debugInfo = `Toplam ${jsonData.length} satır bulundu.`
 
         let skippedCount = 0
 
