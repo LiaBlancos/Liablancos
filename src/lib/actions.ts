@@ -1612,78 +1612,110 @@ export async function importOrderExcel(formData: FormData) {
 
         console.log(`[Order Excel Import] Found ${orders.size} unique orders. Saving...`)
 
-        // 2. Save to DB - Upsert by order_number
+        // 2. OPTIMIZED: Batch database operations for speed
+        const orderNumbers = Array.from(orders.keys())
+
+        // Step 1: Get all existing orders in one query
+        const { data: existingPackages } = await supabase
+            .from('shipment_packages')
+            .select('id, order_number')
+            .in('order_number', orderNumbers)
+
+        const existingMap = new Map(existingPackages?.map(p => [p.order_number, p.id]) || [])
+
+        // Step 2: Prepare batch inserts and updates
+        const toInsert: any[] = []
+        const toUpdate: any[] = []
+        const orderIdMap = new Map<string, string>() // orderNumber -> id
+
         for (const [orderNum, data] of orders) {
-            // Upsert Order - use order_number as unique key
-            const { data: existingOrders } = await supabase
-                .from('shipment_packages')
-                .select('id')
-                .eq('order_number', orderNum)
-                .maybeSingle()
+            const existingId = existingMap.get(orderNum)
 
-            let orderId: string
-
-            if (existingOrders) {
-                // Update existing order
-                const { data: updated } = await supabase
-                    .from('shipment_packages')
-                    .update({
-                        shipment_package_id: data.packageId,
-                        customer_name: data.customerName,
-                        total_price: data.totalPrice,
-                        order_date: data.orderDate,
-                        delivery_date: data.deliveryDate,
-                        status: data.status,
-                        due_at: data.dueAt,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', existingOrders.id)
-                    .select('id')
-                    .single()
-
-                orderId = existingOrders.id
+            if (existingId) {
+                // Existing order - prepare for update
+                toUpdate.push({
+                    id: existingId,
+                    shipment_package_id: data.packageId,
+                    customer_name: data.customerName,
+                    total_price: data.totalPrice,
+                    order_date: data.orderDate,
+                    delivery_date: data.deliveryDate,
+                    status: data.status,
+                    due_at: data.dueAt,
+                    updated_at: new Date().toISOString()
+                })
+                orderIdMap.set(orderNum, existingId)
             } else {
-                // Insert new order
-                const { data: inserted } = await supabase
-                    .from('shipment_packages')
-                    .insert({
-                        order_number: data.orderNumber,
-                        shipment_package_id: data.packageId,
-                        customer_name: data.customerName,
-                        total_price: data.totalPrice,
-                        order_date: data.orderDate,
-                        delivery_date: data.deliveryDate,
-                        status: data.status,
-                        due_at: data.dueAt,
-                        payment_status: 'unpaid'
-                    })
-                    .select('id')
-                    .single()
-
-                if (!inserted) continue
-                orderId = inserted.id
+                // New order - prepare for insert
+                toInsert.push({
+                    order_number: data.orderNumber,
+                    shipment_package_id: data.packageId,
+                    customer_name: data.customerName,
+                    total_price: data.totalPrice,
+                    order_date: data.orderDate,
+                    delivery_date: data.deliveryDate,
+                    status: data.status,
+                    due_at: data.dueAt,
+                    payment_status: 'unpaid'
+                })
             }
-
-            // Replace items
-            if (data.items.length > 0) {
-                await supabase.from('shipment_package_items').delete().eq('package_id', orderId)
-
-                const itemsToInsert = data.items.map(item => ({
-                    package_id: orderId,
-                    ...item
-                }))
-
-                await supabase.from('shipment_package_items').insert(itemsToInsert)
-            }
-
-            processedCount++
         }
+
+        // Step 3: Bulk insert new orders
+        if (toInsert.length > 0) {
+            const { data: inserted } = await supabase
+                .from('shipment_packages')
+                .insert(toInsert)
+                .select('id, order_number')
+
+            inserted?.forEach(pkg => orderIdMap.set(pkg.order_number, pkg.id))
+        }
+
+        // Step 4: Bulk update existing orders (Supabase doesn't have native bulk update, so we batch them)
+        for (const update of toUpdate) {
+            await supabase
+                .from('shipment_packages')
+                .update(update)
+                .eq('id', update.id)
+        }
+
+        // Step 5: Get all package IDs to delete old items
+        const allPackageIds = Array.from(orderIdMap.values())
+
+        if (allPackageIds.length > 0) {
+            // Delete all old items in one query
+            await supabase
+                .from('shipment_package_items')
+                .delete()
+                .in('package_id', allPackageIds)
+
+            // Step 6: Prepare all items for bulk insert
+            const allItems: any[] = []
+            for (const [orderNum, data] of orders) {
+                const packageId = orderIdMap.get(orderNum)
+                if (packageId && data.items.length > 0) {
+                    data.items.forEach(item => {
+                        allItems.push({
+                            package_id: packageId,
+                            ...item
+                        })
+                    })
+                }
+            }
+
+            // Bulk insert all items
+            if (allItems.length > 0) {
+                await supabase
+                    .from('shipment_package_items')
+                    .insert(allItems)
+            }
+        }
+
+        processedCount = orders.size
 
         revalidatePath('/finans/odemeler')
         return {
             success: true,
-            count: processedCount,
-            debug: debugInfo,
             skipped: skippedCount,
             totalRows: jsonData.length
         }
