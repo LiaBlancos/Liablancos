@@ -64,8 +64,8 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
             const { resetDatabase } = await import('@/lib/actions')
             const result = await resetDatabase()
             if (result.success) {
-                alert('Veritabanı temizlendi. Şimdi veriler tekrar çekilecek...')
-                await handleSync()
+                alert('Veritabanı başarıyla temizlendi.\n\nArtık "Sipariş Yükle" veya "Ödeme Yükle" butonları ile Excel yükleyebilir ya da "Şimdi Güncelle" ile API\'den çekebilirsiniz.')
+                router.refresh()
             } else {
                 alert('Sıfırlama hatası: ' + result.error)
             }
