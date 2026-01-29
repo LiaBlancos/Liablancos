@@ -204,3 +204,14 @@ create table if not exists unmatched_payments (
 create index if not exists idx_shipment_order_number on shipment_packages(order_number);
 create index if not exists idx_shipment_package_id on shipment_packages(shipment_package_id);
 create index if not exists idx_shipment_items_package on shipment_package_items(package_id);
+
+-- EXCEL IMPORT SUPPORT
+alter table shipment_packages add column if not exists payment_source text default 'api';
+
+create table if not exists payment_imports (
+  id uuid default uuid_generate_v4() primary key,
+  filename text,
+  processed_count integer default 0,
+  matched_count integer default 0,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);

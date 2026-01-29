@@ -13,7 +13,8 @@ import {
     ChevronDown,
     Filter,
     Calendar,
-    ArrowUpRight
+    ArrowUpRight,
+    Upload
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { syncTrendyolPayments } from '@/lib/actions'
@@ -108,6 +109,46 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* Excel Upload */}
+                    <label className={cn(
+                        "px-4 py-4 rounded-3xl font-bold text-sm bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-100 transition-colors cursor-pointer flex items-center gap-2",
+                        isSyncing && "opacity-50 pointer-events-none"
+                    )}>
+                        <input
+                            type="file"
+                            accept=".xlsx, .xls"
+                            className="hidden"
+                            onChange={async (e) => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                if (!confirm(`${file.name} dosyasını yüklemek istiyor musunuz?`)) return
+
+                                setIsSyncing(true)
+                                try {
+                                    const { importPaymentExcel } = await import('@/lib/actions')
+                                    const formData = new FormData()
+                                    formData.append('file', file)
+
+                                    const result = await importPaymentExcel(formData)
+
+                                    if (result.success) {
+                                        alert(`Excel Yükleme Başarılı!\n\nİşlenen Satır: ${result.processed}\nEşleşen Sipariş: ${result.matched}\nEşleşmeyen: ${result.unmatched}`)
+                                        router.refresh()
+                                    } else {
+                                        alert('Excel yükleme hatası: ' + result.error)
+                                    }
+                                } catch (error: any) {
+                                    alert('Hata: ' + error.message)
+                                } finally {
+                                    setIsSyncing(false)
+                                    e.target.value = '' // Reset input
+                                }
+                            }}
+                        />
+                        <Upload className="w-5 h-5" />
+                        Excel Yükle
+                    </label>
+
                     {/* Reset Button */}
                     <button
                         onClick={handleReset}
