@@ -1029,7 +1029,9 @@ export async function syncTrendyolOrdersToDb() {
                     : [{ id: null }] // Fallback if no packages listed
 
                 for (const pkgInfo of packages) {
-                    const shipmentPackageId = pkgInfo.id?.toString() || null
+                    // FIX: If package ID is null, use Order Number to prevent duplicate rows on upsert
+                    // Postgres unique constraints treat NULLs as distinct, causing duplicates.
+                    const shipmentPackageId = pkgInfo.id?.toString() || order.orderNumber.toString()
 
                     const { data: pkg, error: pkgError } = await supabase
                         .from('shipment_packages')
