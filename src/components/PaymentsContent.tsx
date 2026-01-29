@@ -17,7 +17,6 @@ import {
     Upload
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { syncTrendyolPayments } from '@/lib/actions'
 import { useRouter } from 'next/navigation'
 
 interface PaymentsContentProps {
@@ -38,33 +37,15 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
     const [showUnmatched, setShowUnmatched] = useState(false)
     const router = useRouter()
 
-    const handleSync = async () => {
-        setIsSyncing(true)
-        try {
-            const result = await syncTrendyolPayments()
-            if (result.success) {
-                const log = result.log
-                alert(`Senkronizasyon Başarılı!\n\nÇekilen Ödeme: ${log.pulled_count}\nEşleşen: ${log.matched_count}\nEşleşmeyen: ${log.unmatched_count}`)
-                router.refresh()
-            } else {
-                alert('Senkronizasyon hatası: ' + result.error)
-            }
-        } catch (e) {
-            alert('Senkronizasyon sırasında bir hata oluştu.')
-        } finally {
-            setIsSyncing(false)
-        }
-    }
-
     const handleReset = async () => {
-        if (!confirm('DİKKAT: Tüm sipariş ve ödeme verileri silinecek ve sıfırdan çekilecek. Bu işlem duplicate (çift) kayıtları temizlemek için önerilir. Devam etmek istiyor musunuz?')) return
+        if (!confirm('DİKKAT: Tüm sipariş ve ödeme verileri silinecek. Bu işlem geri alınamaz. Devam etmek istiyor musunuz?')) return
 
         setIsSyncing(true)
         try {
             const { resetDatabase } = await import('@/lib/actions')
             const result = await resetDatabase()
             if (result.success) {
-                alert('Veritabanı başarıyla temizlendi.\n\nArtık "Sipariş Yükle" veya "Ödeme Yükle" butonları ile Excel yükleyebilir ya da "Şimdi Güncelle" ile API\'den çekebilirsiniz.')
+                alert('Veritabanı başarıyla temizlendi.\n\nArtık "Sipariş Yükle" ve "Ödeme Yükle" butonları ile Excel dosyalarınızı yükleyebilirsiniz.')
                 router.refresh()
             } else {
                 alert('Sıfırlama hatası: ' + result.error)
@@ -209,14 +190,6 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                     >
                         <AlertCircle className="w-5 h-5" />
                         Eşleşmeyenler ({unmatched.length})
-                    </button>
-                    <button
-                        disabled={isSyncing}
-                        onClick={handleSync}
-                        className="px-8 py-4 bg-zinc-900 text-white rounded-3xl font-bold text-sm hover:bg-black transition-all flex items-center gap-3 shadow-2xl shadow-zinc-200 disabled:opacity-50"
-                    >
-                        <RefreshCcw className={cn("w-5 h-5", isSyncing && "animate-spin")} />
-                        {isSyncing ? 'Senkronize Ediliyor...' : 'Şimdi Güncelle'}
                     </button>
                 </div>
             </div>
@@ -394,6 +367,34 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                                                     <span className="text-xs font-bold text-emerald-600">{new Date(pkg.paid_at).toLocaleDateString('tr-TR')}</span>
                                                 </div>
                                             )}
+                                            {pkg.due_at && pkg.payment_status !== 'paid' && (() => {
+                                                const dueDate = new Date(pkg.due_at)
+                                                const today = new Date()
+                                                const diffTime = dueDate.getTime() - today.getTime()
+                                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+                                                const isOverdue = diffDays < 0
+
+                                                return (
+                                                    <div className={cn(
+                                                        "flex flex-col pl-4 border-l",
+                                                        isOverdue ? "border-rose-200" : "border-amber-200"
+                                                    )}>
+                                                        <span className={cn(
+                                                            "text-[9px] font-black uppercase tracking-tighter",
+                                                            isOverdue ? "text-rose-500" : "text-amber-500"
+                                                        )}>
+                                                            {isOverdue ? '⚠️ VADESİ GEÇTİ' : 'Vade Tarihi'}
+                                                        </span>
+                                                        <span className={cn(
+                                                            "text-xs font-bold",
+                                                            isOverdue ? "text-rose-600" : "text-amber-600"
+                                                        )}>
+                                                            {dueDate.toLocaleDateString('tr-TR')}
+                                                            {isOverdue ? ` (${Math.abs(diffDays)} gün geçti)` : ` (${diffDays} gün kaldı)`}
+                                                        </span>
+                                                    </div>
+                                                )
+                                            })()}
                                         </div>
                                         <div className="flex flex-col items-end">
                                             <span className="text-[9px] font-black text-zinc-400 uppercase tracking-tighter">Paket ID</span>
@@ -406,6 +407,6 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     )
 }

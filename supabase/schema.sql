@@ -164,7 +164,8 @@ create table if not exists shipment_packages (
   payment_reference text,
   payment_last_checked_at timestamp with time zone,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  due_at timestamp with time zone
 );
 
 create table if not exists shipment_package_items (

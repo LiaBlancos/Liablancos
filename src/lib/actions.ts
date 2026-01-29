@@ -1453,49 +1453,72 @@ export async function importOrderExcel(formData: FormData) {
         const jsonData = XLSX.utils.sheet_to_json(worksheet)
 
         let processedCount = 0
-        const packages = new Map<string, {
+        const orders = new Map<string, {
             orderNumber: string
+            packageId: string | null
             customerName: string
             totalPrice: number
             orderDate: string
+            deliveryDate: string | null
             status: string
+            dueAt: string | null
             items: any[]
         }>()
 
         console.log(`[Order Excel Import] Processing ${jsonData.length} rows...`)
 
-        // 1. Group rows by Package ID (or Order Number if Packet ID missing)
+        // 1. Group rows by Order Number (UNIQUE KEY)
         for (const r of jsonData) {
             const row = r as any
             const orderNumber = row['Sipariş Numarası']?.toString() || row['Order Number']?.toString()
-            const packageId = row['Paket Numarası']?.toString() || row['Teslimat No']?.toString() || row['Shipment Package ID']?.toString() || orderNumber // Fallback to Order Number
-            const status = row['Satır Statüsü'] || row['Status'] || row['Durum']
+            if (!orderNumber) continue // Skip rows without order number
+
+            const packageId = row['Paket No']?.toString() || row['Paket Numarası']?.toString() || null
+            const status = row['Sipariş Statüsü'] || row['Satır Statüsü'] || row['Status'] || ''
+            const deliveryDate = row['Teslim Tarihi'] || row['Delivery Date'] || null
 
             // Item details
-            const productName = row['Ürün Adı'] || row['Product Name']
-            const barcode = row['Barkod'] || row['Barcode']
+            const productName = row['Ürün Adı'] || row['Product Name'] || ''
+            const barcode = row['Barkod'] || row['Barcode'] || ''
             const quantity = parseInt(row['Adet'] || row['Quantity'] || '1')
-            const price = parseFloat(row['Birim Satış Fiyatı (KDV Dahil)'] || row['Satış Fiyatı'] || row['Price'] || '0')
-            const customer = row['Müşteri Adı'] || row['Customer Name']
-            const date = row['Sipariş Tarihi'] || row['Order Date']
+            const price = parseFloat(row['Satış Tutarı'] || row['Birim Satış Fiyatı (KDV Dahil)'] || row['Price'] || '0')
+            const customer = row['Müşteri Adı'] || row['Customer Name'] || ''
+            const orderDate = row['Sipariş Tarihi'] || row['Order Date'] || new Date().toISOString()
             const total = parseFloat(row['Sipariş Tutarı'] || row['Order Total'] || '0')
 
-            if (!packageId) continue
-
-            if (!packages.has(packageId)) {
-                packages.set(packageId, {
-                    orderNumber: orderNumber || packageId,
-                    customerName: customer,
-                    totalPrice: total, // Note: Excel usually has total per order, not package. We might overwrite.
-                    orderDate: date ? new Date(date).toISOString() : new Date().toISOString(),
-                    status: status,
-                    items: []
-                })
+            // Calculate due_at if order is delivered
+            let dueAt: string | null = null
+            if (deliveryDate && (status === 'Teslim Edildi' || status === 'Delivered' || status.includes('Teslim'))) {
+                const deliveryDateObj = new Date(deliveryDate)
+                deliveryDateObj.setDate(deliveryDateObj.getDate() + 28) // Add 28 days
+                dueAt = deliveryDateObj.toISOString()
             }
 
-            // Add item to package
+            if (!orders.has(orderNumber)) {
+                orders.set(orderNumber, {
+                    orderNumber,
+                    packageId,
+                    customerName: customer,
+                    totalPrice: total,
+                    orderDate: orderDate ? new Date(orderDate).toISOString() : new Date().toISOString(),
+                    deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : null,
+                    status,
+                    dueAt,
+                    items: []
+                })
+            } else {
+                // Update delivery info if this row has more recent data
+                const existing = orders.get(orderNumber)!
+                if (deliveryDate && !existing.deliveryDate) {
+                    existing.deliveryDate = new Date(deliveryDate).toISOString()
+                    existing.status = status
+                    existing.dueAt = dueAt
+                }
+            }
+
+            // Add item to order
             if (productName) {
-                packages.get(packageId)?.items.push({
+                orders.get(orderNumber)?.items.push({
                     product_name: productName,
                     barcode: barcode,
                     quantity: quantity,
@@ -1504,41 +1527,70 @@ export async function importOrderExcel(formData: FormData) {
             }
         }
 
-        console.log(`[Order Excel Import] Found ${packages.size} unique packages. Saving...`)
+        console.log(`[Order Excel Import] Found ${orders.size} unique orders. Saving...`)
 
-        // 2. Save to DB
-        for (const [pkgId, data] of packages) {
-            // Upsert Package
-            const { data: pkg, error: pkgError } = await supabase
+        // 2. Save to DB - Upsert by order_number
+        for (const [orderNum, data] of orders) {
+            // Upsert Order - use order_number as unique key
+            const { data: existingOrders } = await supabase
                 .from('shipment_packages')
-                .upsert({
-                    order_number: data.orderNumber,
-                    shipment_package_id: pkgId,
-                    customer_name: data.customerName,
-                    total_price: data.totalPrice,
-                    order_date: data.orderDate,
-                    status: data.status,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'shipment_package_id' })
                 .select('id')
+                .eq('order_number', orderNum)
                 .maybeSingle()
 
-            if (pkgError) {
-                console.error(`Error saving package ${pkgId}:`, pkgError)
-                continue
+            let orderId: string
+
+            if (existingOrders) {
+                // Update existing order
+                const { data: updated } = await supabase
+                    .from('shipment_packages')
+                    .update({
+                        shipment_package_id: data.packageId,
+                        customer_name: data.customerName,
+                        total_price: data.totalPrice,
+                        order_date: data.orderDate,
+                        delivery_date: data.deliveryDate,
+                        status: data.status,
+                        due_at: data.dueAt,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', existingOrders.id)
+                    .select('id')
+                    .single()
+
+                orderId = existingOrders.id
+            } else {
+                // Insert new order
+                const { data: inserted } = await supabase
+                    .from('shipment_packages')
+                    .insert({
+                        order_number: data.orderNumber,
+                        shipment_package_id: data.packageId,
+                        customer_name: data.customerName,
+                        total_price: data.totalPrice,
+                        order_date: data.orderDate,
+                        delivery_date: data.deliveryDate,
+                        status: data.status,
+                        due_at: data.dueAt,
+                        payment_status: 'unpaid'
+                    })
+                    .select('id')
+                    .single()
+
+                if (!inserted) continue
+                orderId = inserted.id
             }
 
-            if (pkg && data.items.length > 0) {
-                // Replace items
-                await supabase.from('shipment_package_items').delete().eq('package_id', pkg.id)
+            // Replace items
+            if (data.items.length > 0) {
+                await supabase.from('shipment_package_items').delete().eq('package_id', orderId)
 
                 const itemsToInsert = data.items.map(item => ({
-                    package_id: pkg.id,
+                    package_id: orderId,
                     ...item
                 }))
 
-                const { error: itemsError } = await supabase.from('shipment_package_items').insert(itemsToInsert)
-                if (itemsError) console.error(`Error saving items for ${pkgId}:`, itemsError)
+                await supabase.from('shipment_package_items').insert(itemsToInsert)
             }
 
             processedCount++
