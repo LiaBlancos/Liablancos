@@ -55,6 +55,27 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
         }
     }
 
+    const handleReset = async () => {
+        if (!confirm('DİKKAT: Tüm sipariş ve ödeme verileri silinecek ve sıfırdan çekilecek. Bu işlem duplicate (çift) kayıtları temizlemek için önerilir. Devam etmek istiyor musunuz?')) return
+
+        setIsSyncing(true)
+        try {
+            const { resetDatabase } = await import('@/lib/actions')
+            const result = await resetDatabase()
+            if (result.success) {
+                alert('Veritabanı temizlendi. Şimdi veriler tekrar çekilecek...')
+                await handleSync()
+            } else {
+                alert('Sıfırlama hatası: ' + result.error)
+            }
+        } catch (error) {
+            console.error('Reset error:', error)
+            alert('Beklenmedik bir hata oluştu.')
+        } finally {
+            setIsSyncing(false)
+        }
+    }
+
     const filteredPackages = packages.filter(pkg => {
         const matchesFilter = filter === 'all' || pkg.payment_status === filter
         const matchesSearch =
@@ -87,6 +108,15 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* Reset Button */}
+                    <button
+                        onClick={handleReset}
+                        disabled={isSyncing}
+                        className="px-4 py-4 rounded-3xl font-bold text-sm bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100 transition-colors disabled:opacity-50"
+                    >
+                        Verileri Sıfırla
+                    </button>
+
                     <button
                         onClick={() => setShowUnmatched(!showUnmatched)}
                         className={cn(

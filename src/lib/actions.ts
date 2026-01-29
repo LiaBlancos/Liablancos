@@ -1293,6 +1293,29 @@ export async function getShipmentPackages(filter: 'all' | 'paid' | 'unpaid' = 'a
     }
 }
 
+export async function resetDatabase() {
+    try {
+        console.log('[LiaBlancos] Resetting database...')
+        // Delete child items first to avoid FK constraint issues
+        await supabase.from('shipment_package_items').delete().neq('id', 0) // Delete all
+
+        // Delete packages
+        await supabase.from('shipment_packages').delete().neq('id', '00000000-0000-0000-0000-000000000000') // Delete all UUIDs
+
+        // Delete unmatched payments
+        await supabase.from('unmatched_payments').delete().neq('id', 0)
+
+        // Delete logs
+        await supabase.from('payment_sync_logs').delete().neq('id', 0)
+
+        revalidatePath('/finans/odemeler')
+        return { success: true }
+    } catch (error: any) {
+        console.error('resetDatabase error:', error)
+        return { error: error.message }
+    }
+}
+
 export async function getUnmatchedPayments() {
     try {
         const { data, error } = await supabase
