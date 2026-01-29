@@ -113,7 +113,11 @@ export default function PaymentsContent({ stats, packages, unmatched }: Payments
                                     const result = await importOrderExcel(formData)
 
                                     if (result.success) {
-                                        alert(`Sipariş Excel Yükleme Başarılı!\n\nOluşturulan/Güncellenen Paket: ${result.count}`)
+                                        let message = `Sipariş Excel Yükleme Başarılı!\n\nOluşturulan/Güncellenen Paket: ${result.count}`
+                                        if (result.debug) {
+                                            message += `\n\n📊 Debug Bilgisi:\n${result.debug}\nToplam Satır: ${result.totalRows}\nAtlanan Satır: ${result.skipped}`
+                                        }
+                                        alert(message)
                                         router.refresh()
                                     } else {
                                         alert('Excel yükleme hatası: ' + result.error)

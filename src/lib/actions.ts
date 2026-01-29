@@ -1465,37 +1465,63 @@ export async function importOrderExcel(formData: FormData) {
             items: any[]
         }>()
 
+        // Helper function to find column value with multiple possible names
+        const getColumnValue = (row: any, possibleNames: string[]): any => {
+            for (const name of possibleNames) {
+                if (row[name] !== undefined && row[name] !== null && row[name] !== '') {
+                    return row[name]
+                }
+            }
+            return null
+        }
+
         console.log(`[Order Excel Import] Processing ${jsonData.length} rows...`)
 
         // DEBUG: Log first row to see column names
+        let debugInfo = ''
         if (jsonData.length > 0) {
-            console.log('[Order Excel Import] First row columns:', Object.keys(jsonData[0]))
-            console.log('[Order Excel Import] First row data:', jsonData[0])
+            const firstRowKeys = Object.keys(jsonData[0] as any)
+            debugInfo = `Excel Kolonları: ${firstRowKeys.join(', ')}`
+            console.log('[Order Excel Import] Columns found:', firstRowKeys)
         }
+
+        let skippedCount = 0
 
         // 1. Group rows by Order Number (UNIQUE KEY)
         for (const r of jsonData) {
             const row = r as any
-            const orderNumber = row['Sipariş Numarası']?.toString() || row['Order Number']?.toString()
 
-            // DEBUG: Log if order number not found
+            // Try multiple variations for order number
+            const orderNumber = getColumnValue(row, [
+                'Sipariş Numarası',
+                'Sipariş No',
+                'Order Number',
+                'OrderNumber',
+                'Siparis Numarasi'
+            ])?.toString()
+
             if (!orderNumber) {
-                console.log('[Order Excel Import] Skipping row - no order number:', Object.keys(row))
+                skippedCount++
                 continue
             }
 
-            const packageId = row['Paket No']?.toString() || row['Paket Numarası']?.toString() || null
-            const status = row['Sipariş Statüsü'] || row['Satır Statüsü'] || row['Status'] || ''
-            const deliveryDate = row['Teslim Tarihi'] || row['Delivery Date'] || null
+            const packageId = getColumnValue(row, ['Paket No', 'Paket Numarası', 'Package ID'])?.toString() || null
+            const status = getColumnValue(row, ['Sipariş Statüsü', 'Satır Statüsü', 'Status', 'Durum']) || ''
+            const deliveryDate = getColumnValue(row, ['Teslim Tarihi', 'Delivery Date', 'Teslimat Tarihi'])
 
             // Item details
-            const productName = row['Ürün Adı'] || row['Product Name'] || ''
-            const barcode = row['Barkod'] || row['Barcode'] || ''
-            const quantity = parseInt(row['Adet'] || row['Quantity'] || '1')
-            const price = parseFloat(row['Satış Tutarı'] || row['Birim Satış Fiyatı (KDV Dahil)'] || row['Price'] || '0')
-            const customer = row['Müşteri Adı'] || row['Customer Name'] || ''
-            const orderDate = row['Sipariş Tarihi'] || row['Order Date'] || new Date().toISOString()
-            const total = parseFloat(row['Sipariş Tutarı'] || row['Order Total'] || '0')
+            const productName = getColumnValue(row, ['Ürün Adı', 'Product Name', 'Urun Adi']) || ''
+            const barcode = getColumnValue(row, ['Barkod', 'Barcode']) || ''
+            const quantity = parseInt(getColumnValue(row, ['Adet', 'Quantity', 'Miktar']) || '1')
+            const price = parseFloat(getColumnValue(row, [
+                'Satış Tutarı',
+                'Birim Satış Fiyatı (KDV Dahil)',
+                'Price',
+                'Tutar'
+            ]) || '0')
+            const customer = getColumnValue(row, ['Müşteri Adı', 'Customer Name', 'Alıcı']) || ''
+            const orderDate = getColumnValue(row, ['Sipariş Tarihi', 'Order Date']) || new Date().toISOString()
+            const total = parseFloat(getColumnValue(row, ['Sipariş Tutarı', 'Order Total', 'Toplam']) || '0')
 
             // Calculate due_at if order is delivered
             let dueAt: string | null = null
@@ -1608,7 +1634,13 @@ export async function importOrderExcel(formData: FormData) {
         }
 
         revalidatePath('/finans/odemeler')
-        return { success: true, count: processedCount }
+        return {
+            success: true,
+            count: processedCount,
+            debug: debugInfo,
+            skipped: skippedCount,
+            totalRows: jsonData.length
+        }
 
     } catch (error: any) {
         console.error('Order Excel import error:', error)
