@@ -116,3 +116,66 @@ export type UnmatchedPayment = {
     raw_data: any
     created_at: string
 }
+
+export type FinanceOrder = {
+    id: string
+    order_number: string
+    package_no: string | null
+    barcode: string | null
+    product_name: string | null
+    quantity: number
+    sale_total: number
+    order_date: string | null
+    order_status: string | null
+    delivered_at: string | null
+    due_at: string | null
+    expected_payout_at: string | null
+    payment_status: 'unpaid' | 'paid'
+    paid_at: string | null
+    paid_amount: number | null
+    commission_amount: number | null
+    discount_amount: number | null
+    penalty_amount: number | null
+    payment_reference: string | null
+    created_at: string
+    updated_at: string
+}
+
+export type FinancePaymentRow = {
+    id: string
+    order_number: string
+    package_no: string | null
+    paid_at: string | null
+    amount: number
+    commission: number
+    discount: number
+    penalty: number
+    net_amount?: number
+    transaction_type: string | null
+    raw_row_json: any
+    created_at: string
+}
+
+export interface ImportResult {
+    success: boolean
+    error?: string
+    processed?: number
+    matched?: number
+    updated?: number
+    inserted?: number
+    unmatched?: number
+}
+
+export interface FinanceUploadLog {
+    id: string
+    filename: string
+    upload_type: 'orders' | 'payments'
+    processed_count: number
+    updated_count: number
+    inserted_count: number
+    matched_count: number
+    unmatched_count: number
+    status: 'success' | 'error'
+    error_message: string | null
+    created_at: string
+}

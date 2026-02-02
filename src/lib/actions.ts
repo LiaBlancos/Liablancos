@@ -1,8 +1,9 @@
 'use server'
 
 import { supabase } from './supabase'
-import { Product, Shelf, InventoryLog } from '@/types'
+import { Product, Shelf, InventoryLog, FinanceOrder, FinancePaymentRow, ImportResult, FinanceUploadLog } from '@/types'
 import { revalidatePath } from 'next/cache'
+import * as XLSX from 'xlsx'
 
 export async function getRecentLogs() {
     const { data, error } = await supabase
@@ -1003,742 +1004,895 @@ export async function getExtendedTrendyolReturns(page: number = 0, size: number 
     }
 }
 
-export async function syncTrendyolOrdersToDb() {
-    try {
-        const now = Date.now()
-        const CHUNK_SIZE_MS = 13 * 24 * 60 * 60 * 1000 // Trendyol limit is 14 days (336 hours)
-        const chunkIndices = Array.from({ length: 4 }, (_, i) => i)
+// ------ FINANCE ACTIONS (EXCEL BASED) ------
 
-        let savedCount = 0
-        console.log('[LiaBlancos] Starting Chunked Order Sync...')
+// TR Format Parsers
+function parseTRDate(value: any): string | null {
+    if (!value) return null
+    if (value instanceof Date) return value.toISOString()
 
-        for (const i of chunkIndices) {
-            const endDate = now - (i * CHUNK_SIZE_MS)
-            const startDate = endDate - CHUNK_SIZE_MS
-            const result = await getTrendyolOrders(undefined, 0, 100, startDate, endDate)
+    if (typeof value === 'number') {
+        const excelEpoch = new Date(Date.UTC(1899, 11, 30))
+        return new Date(excelEpoch.getTime() + value * 24 * 60 * 60 * 1000).toISOString()
+    }
 
-            if (!result.success || !result.orders) {
-                console.warn(`[LiaBlancos] Order sync chunk ${i} skipped: ${result.error}`)
-                continue
-            }
+    if (typeof value === 'string') {
+        const str = value.trim()
+        if (!str) return null
 
-            for (const order of result.orders) {
-                // IMPORTANT: One order can have multiple shipment packages
-                const packages = order.shipmentPackages && order.shipmentPackages.length > 0
-                    ? order.shipmentPackages
-                    : [{ id: null }] // Fallback if no packages listed
-
-                for (const pkgInfo of packages) {
-                    // FIX: If package ID is null, use Order Number to prevent duplicate rows on upsert
-                    // Postgres unique constraints treat NULLs as distinct, causing duplicates.
-                    const shipmentPackageId = pkgInfo.id?.toString() || order.orderNumber.toString()
-
-                    const { data: pkg, error: pkgError } = await supabase
-                        .from('shipment_packages')
-                        .upsert({
-                            order_number: order.orderNumber,
-                            shipment_package_id: shipmentPackageId,
-                            customer_name: `${order.customerFirstName} ${order.customerLastName}`,
-                            total_price: order.totalPrice,
-                            order_date: new Date(order.orderDate).toISOString(),
-                            status: order.status,
-                            updated_at: new Date().toISOString()
-                        }, { onConflict: 'shipment_package_id' })
-                        .select('id')
-                        .maybeSingle()
-
-                    if (pkgError) {
-                        console.error(`[LiaBlancos] Error upserting package ${shipmentPackageId} for order ${order.orderNumber}:`, pkgError)
-                        continue
-                    }
-
-                    if (pkg && order.lines) {
-                        await supabase.from('shipment_package_items').delete().eq('package_id', pkg.id)
-                        const items = order.lines.map((line: any) => ({
-                            package_id: pkg.id,
-                            barcode: line.barcode,
-                            product_name: line.productName,
-                            quantity: line.quantity,
-                            price: line.price
-                        }))
-                        await supabase.from('shipment_package_items').insert(items)
-                    }
-                    savedCount++
+        // Match DD.MM.YYYY or DD.MM.YYYY HH:mm
+        const parts = str.split(/[\s.]+/)
+        if (parts.length >= 3) {
+            const day = parseInt(parts[0])
+            const month = parseInt(parts[1])
+            const year = parseInt(parts[2])
+            let hh = 0, mm = 0
+            if (parts.length >= 5) {
+                const timeParts = parts[3].includes(':') ? parts[3].split(':') : [parts[3], parts[4]]
+                hh = parseInt(timeParts[0]) || 0
+                mm = parseInt(timeParts[1]) || 0
+            } else if (str.includes(':')) {
+                const timeStr = str.split(' ')[1]
+                if (timeStr) {
+                    const timeParts = timeStr.split(':')
+                    hh = parseInt(timeParts[0]) || 0
+                    mm = parseInt(timeParts[1]) || 0
                 }
             }
+            const date = new Date(year, month - 1, day, hh, mm)
+            if (!isNaN(date.getTime())) return date.toISOString()
         }
-
-        console.log(`[LiaBlancos] Orders Sync Complete. Saved ${savedCount} packages.`)
-        return { success: true, count: savedCount }
-    } catch (error: any) {
-        console.error('syncTrendyolOrdersToDb error:', error)
-        return { error: error.message }
     }
+    return null
 }
 
-export async function syncTrendyolPayments() {
-    const runAt = new Date().toISOString()
-    let log = {
-        pulled_count: 0,
-        matched_count: 0,
-        paid_count: 0,
-        unpaid_count: 0,
-        unmatched_count: 0,
-        error: null as string | null
+function parseTRNumber(value: any): number {
+    if (value === null || value === undefined || value === '') return 0
+    if (typeof value === 'number') return value
+
+    // Convert to string and clean
+    let str = value.toString().trim()
+    if (!str) return 0
+
+    // Remove currency symbols if any (TL, $, etc) - simplified
+    str = str.replace(/[₺$€£]/g, '').trim()
+
+    // Turkish format: 1.234,56
+    // If it contains both . and , -> Remove . and replace , with .
+    if (str.includes('.') && str.includes(',')) {
+        str = str.replace(/\./g, '').replace(',', '.')
+    }
+    // If it only contains , -> Replace with .
+    else if (str.includes(',')) {
+        str = str.replace(',', '.')
+    }
+    // If it only contains . -> Usually in Excel if it is 119.000 it might be thousands.
+    // However, without a comma, it's ambiguous. 
+    // Usually Excel exports 119000 without dots if it's a number, 
+    // but if it's formatted text it might be 119.000.
+    // If there is only a dot and it is followed by 3 digits at the end, 
+    // we should treat it as thousands separator for TR context.
+    else if (str.includes('.')) {
+        const parts = str.split('.')
+        // If multiple dots, definitely thousands separator (e.g. 1.000.000)
+        if (parts.length > 2) {
+            str = str.replace(/\./g, '')
+        }
+        else if (parts.length === 2 && parts[1].length === 3) {
+            str = str.replace(/\./g, '')
+        }
     }
 
+    const num = parseFloat(str)
+    return isNaN(num) ? 0 : num
+}
+
+function calculateExpectedPayout(dueAtStr: string | null): string | null {
+    if (!dueAtStr) return null
+    const dueAt = new Date(dueAtStr)
+    const day = dueAt.getDay() // 0: Sun, 1: Mon, 2: Tue, 3: Wed, 4: Thu, 5: Fri, 6: Sat
+
+    const payout = new Date(dueAt)
+    let daysToAdd = 0
+
+    if (day === 1 || day === 4) {
+        daysToAdd = 0
+    } else if (day === 2) {
+        daysToAdd = 2 // Thu
+    } else if (day === 3) {
+        daysToAdd = 1 // Thu
+    } else if (day === 5) {
+        daysToAdd = 3 // Mon
+    } else if (day === 6) {
+        daysToAdd = 2 // Mon
+    } else if (day === 0) {
+        daysToAdd = 1 // Mon
+    }
+
+    payout.setDate(payout.getDate() + daysToAdd)
+    return payout.toISOString()
+}
+
+// Helper for normalization
+function normalizeOrderId(id: any): string | null {
+    if (!id) return null
+    return id.toString().replace(/\D/g, '').trim()
+}
+
+export async function importFinanceOrdersExcel(formData: FormData): Promise<ImportResult> {
     try {
-        // 1. Sync orders first
-        const orderSync = await syncTrendyolOrdersToDb()
-        if (orderSync.error) {
-            throw new Error(`Sipariş senkronizasyonu hatası: ${orderSync.error}`)
-        }
+        const file = formData.get('file') as File
+        if (!file) throw new Error('Dosya seçilmedi.')
 
-        // 2. Get credentials and trim
-        const settings = await getSettings()
-        const sellerId = settings.find(s => s.key === 'trendyol_seller_id')?.value?.trim()
-        const apiKey = settings.find(s => s.key === 'trendyol_api_key')?.value?.trim()
-        const apiSecret = settings.find(s => s.key === 'trendyol_api_secret')?.value?.trim()
+        const buffer = await file.arrayBuffer()
+        const workbook = XLSX.read(buffer, { type: 'buffer' })
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+        const jsonData = XLSX.utils.sheet_to_json(worksheet)
 
-        if (!sellerId || !apiKey || !apiSecret) {
-            throw new Error('Trendyol API bilgileri eksik.')
-        }
+        let processed = 0, updated = 0, inserted = 0
+        const rows = jsonData as any[]
+        const orderNumbers = Array.from(new Set(rows.map(r => r['Sipariş Numarası']?.toString().trim()).filter(Boolean)))
 
-        const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
-        const now = Date.now()
-        const CHUNK_SIZE_MS = 7 * 24 * 60 * 60 * 1000 // Very safe 7 days
-        const chunkIndices = Array.from({ length: 12 }, (_, i) => i) // 84 days
-        let allTransactions: any[] = []
+        // 1. Fetch existing orders to distinguish inserted/updated
+        const { data: existingOrders } = await supabase
+            .from('finance_orders')
+            .select('order_number')
+            .in('order_number', orderNumbers)
 
-        console.log(`[LiaBlancos] Starting Conservative Payment Sync (84 days, 7-day chunks)...`)
+        const existingSet = new Set(existingOrders?.map(o => o.order_number) || [])
 
-        for (const i of chunkIndices) {
-            const endDate = now - (i * CHUNK_SIZE_MS)
-            const startDate = endDate - CHUNK_SIZE_MS
-            const url = `https://api.trendyol.com/integration/finance/sellers/${sellerId}/settlements?startDate=${startDate}&endDate=${endDate}&size=1000`
+        // 2. Prepare bulk upsert data
+        const orderMap = new Map<string, any>()
 
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Basic ${auth}`,
-                    'User-Agent': `${sellerId} - SelfIntegration`
+        for (const row of rows) {
+            // Normalize Order Number for consistency with payment matching
+            const rawOrderNo = row['Sipariş Numarası']
+            const orderNumber = normalizeOrderId(rawOrderNo)
+            if (!orderNumber) continue
+
+            // Normalize Package Number
+            const rawPackageNo = row['Paket No']
+            const packageNo = normalizeOrderId(rawPackageNo)
+
+            const saleTotal = parseTRNumber(row['Satış Tutarı'])
+            const quantity = parseInt(row['Adet'] || '0')
+
+            if (!orderMap.has(orderNumber)) {
+                const deliveredAtRaw = row['Teslim Tarihi']
+                const deliveredAt = parseTRDate(deliveredAtRaw)
+                let dueAt: string | null = null
+                let expectedPayoutAt: string | null = null
+                if (deliveredAt) {
+                    const d = new Date(deliveredAt)
+                    d.setDate(d.getDate() + 28)
+                    dueAt = d.toISOString()
+                    expectedPayoutAt = calculateExpectedPayout(dueAt)
                 }
-            })
 
-            if (response.ok) {
-                const data = await response.json()
-                if (data.content) {
-                    console.log(`[LiaBlancos] Finance Chunk ${i + 1} Pulled: ${data.content.length}`)
-                    allTransactions = [...allTransactions, ...data.content]
-                }
-            } else {
-                const errorBody = await response.text()
-                console.error(`[LiaBlancos] Finance API Error (Chunk ${i}): ${response.status} - ${errorBody}`)
-                log.error = `API Error ${response.status}: ${errorBody}`
-            }
-            // Small delay
-            await new Promise(resolve => setTimeout(resolve, 500))
-        }
-
-        const transactions = allTransactions
-        log.pulled_count = transactions.length
-        console.log(`[LiaBlancos] Total Transactions Pulled: ${log.pulled_count}`)
-
-        for (const tx of transactions) {
-            const shipmentPackageId = tx.shipmentPackageId?.toString()
-            const orderNumber = tx.orderNumber?.toString()
-            const amount = tx.transactionAmount
-            const reference = tx.transactionId?.toString()
-
-            console.log(`[LiaBlancos] Processing TX: ${reference}, Package: ${shipmentPackageId}, Order: ${orderNumber}`)
-
-            // Try to find by shipmentPackageId
-            let pkgFound = false
-            if (shipmentPackageId) {
-                const { data: pkg } = await supabase
-                    .from('shipment_packages')
-                    .select('id, payment_status')
-                    .eq('shipment_package_id', shipmentPackageId)
-                    .maybeSingle()
-
-                if (pkg) {
-                    pkgFound = true
-                    console.log(`[LiaBlancos] Match Found (Package ID): ${shipmentPackageId}`)
-                    await supabase.from('shipment_packages').update({
-                        payment_status: 'paid',
-                        paid_at: new Date(tx.transactionDate).toISOString(),
-                        paid_amount: amount,
-                        payment_reference: reference,
-                        payment_last_checked_at: runAt,
-                        updated_at: new Date().toISOString()
-                    }).eq('id', pkg.id)
-                    log.matched_count++
-                    log.paid_count++
-                }
-            }
-
-            // If not found, try by orderNumber
-            if (!pkgFound && orderNumber) {
-                const { data: pkg } = await supabase
-                    .from('shipment_packages')
-                    .select('id, payment_status')
-                    .eq('order_number', orderNumber)
-                    .maybeSingle()
-
-                if (pkg) {
-                    pkgFound = true
-                    console.log(`[LiaBlancos] Match Found (Order No): ${orderNumber}`)
-                    await supabase.from('shipment_packages').update({
-                        payment_status: 'paid',
-                        paid_at: new Date(tx.transactionDate).toISOString(),
-                        paid_amount: amount,
-                        payment_reference: reference,
-                        payment_last_checked_at: runAt,
-                        updated_at: new Date().toISOString()
-                    }).eq('id', pkg.id)
-                    log.matched_count++
-                    log.paid_count++
-                }
-            }
-
-            // If still not found, save to unmatched
-            if (!pkgFound) {
-                await supabase.from('unmatched_payments').upsert({
-                    shipment_package_id: shipmentPackageId,
+                orderMap.set(orderNumber, {
                     order_number: orderNumber,
-                    transaction_date: new Date(tx.transactionDate).toISOString(),
-                    amount: amount,
-                    payment_reference: reference,
-                    raw_data: tx
-                }, { onConflict: 'payment_reference' })
-                log.unmatched_count++
+                    package_no: packageNo,
+                    barcode: row['Barkod']?.toString() || null,
+                    product_name: row['Ürün Adı']?.toString() || null,
+                    quantity,
+                    sale_total: saleTotal,
+                    order_date: parseTRDate(row['Sipariş Tarihi']),
+                    order_status: row['Sipariş Statüsü']?.toString() || null,
+                    delivered_at: deliveredAt,
+                    due_at: dueAt,
+                    expected_payout_at: expectedPayoutAt,
+                    updated_at: new Date().toISOString()
+                })
+            } else {
+                const prev = orderMap.get(orderNumber)
+                prev.sale_total += saleTotal
+                prev.quantity += quantity
+                // Append product name if different
+                const newProd = row['Ürün Adı']?.toString()
+                if (newProd && prev.product_name && !prev.product_name.includes(newProd)) {
+                    prev.product_name += `, ${newProd}`
+                }
             }
         }
 
-        // Count unpaid
-        const { count: unpaidCount } = await supabase
-            .from('shipment_packages')
-            .select('*', { count: 'exact', head: true })
-            .eq('payment_status', 'unpaid')
-
-        log.unpaid_count = unpaidCount || 0
-
-        // Save log
-        await supabase.from('payment_sync_logs').insert({
-            run_at: runAt,
-            ...log
+        const upsertArray = Array.from(orderMap.values()).map(o => {
+            if (existingSet.has(o.order_number)) {
+                updated++
+            } else {
+                o.payment_status = 'unpaid'
+                inserted++
+            }
+            processed++
+            return o
         })
+
+        // Chunk upsert to avoid large payloads
+        const chunkSize = 100
+        for (let i = 0; i < upsertArray.length; i += chunkSize) {
+            const chunk = upsertArray.slice(i, i + chunkSize)
+            const { error: upsertError } = await supabase
+                .from('finance_orders')
+                .upsert(chunk, { onConflict: 'order_number' })
+            if (upsertError) throw upsertError
+        }
+
+        // 3. Retroactive Matching (Bulk)
+        const { data: unmatchedPayments } = await supabase
+            .from('unmatched_payment_rows')
+            .select('*')
+            .in('order_number', orderNumbers)
+
+        if (unmatchedPayments && unmatchedPayments.length > 0) {
+            const matchTasks = unmatchedPayments.map(unmatched => {
+                return (async () => {
+                    // Update the order status
+                    await supabase.from('finance_orders').update({
+                        payment_status: 'paid',
+                        paid_at: unmatched.paid_at,
+                        paid_amount: unmatched.paid_amount,
+                        commission_amount: unmatched.commission_amount || 0,
+                        discount_amount: unmatched.discount_amount || 0,
+                        penalty_amount: unmatched.penalty_amount || 0,
+                        payment_reference: unmatched.raw_row_json?.['Ekstre Referans No'] || unmatched.raw_row_json?.['Kayıt No'] || null,
+                        updated_at: new Date().toISOString()
+                    }).eq('order_number', unmatched.order_number)
+
+                    // IMPORTANT: Move detail row to history
+                    await supabase.from('finance_payment_rows').insert({
+                        order_number: unmatched.order_number,
+                        package_no: unmatched.package_no || null,
+                        paid_at: unmatched.paid_at,
+                        amount: unmatched.paid_amount,
+                        commission: Math.abs(unmatched.commission_amount || 0),
+                        discount: Math.abs(unmatched.discount_amount || 0),
+                        penalty: Math.abs(unmatched.penalty_amount || 0),
+                        transaction_type: unmatched.raw_row_json?.['İşlem Tipi'] || null,
+                        raw_row_json: unmatched.raw_row_json,
+                        created_at: new Date().toISOString()
+                    })
+
+                    // Remove from unmatched
+                    await supabase.from('unmatched_payment_rows').delete().eq('id', unmatched.id)
+                })()
+            })
+            // Run matching tasks in parallel chunks
+            for (let i = 0; i < matchTasks.length; i += 50) {
+                await Promise.all(matchTasks.slice(i, i + 50))
+            }
+        }
+
+
 
         revalidatePath('/finans/odemeler')
-        return { success: true, log }
-    } catch (error: any) {
-        console.error('syncTrendyolPayments error:', error)
-        log.error = error.message
-        await supabase.from('payment_sync_logs').insert({
-            run_at: runAt,
-            ...log
+
+        // Log success
+        await supabase.from('finance_upload_logs').insert({
+            filename: file.name,
+            upload_type: 'orders',
+            processed_count: processed,
+            updated_count: updated,
+            inserted_count: inserted,
+            status: 'success'
         })
-        return { error: error.message }
-    }
-}
 
-export async function getPaymentStats() {
-    try {
-        const { count: paidCount } = await supabase
-            .from('shipment_packages')
-            .select('*', { count: 'exact', head: true })
-            .eq('payment_status', 'paid')
+        return { success: true, processed, updated, inserted }
+    } catch (e: any) {
+        console.error('importFinanceOrdersExcel error:', e)
 
-        const { count: unpaidCount } = await supabase
-            .from('shipment_packages')
-            .select('*', { count: 'exact', head: true })
-            .eq('payment_status', 'unpaid')
-
-        const { data: lastLog } = await supabase
-            .from('payment_sync_logs')
-            .select('run_at, error')
-            .order('run_at', { ascending: false })
-            .limit(1)
-
-        return {
-            paid: paidCount || 0,
-            unpaid: unpaidCount || 0,
-            last_checked: lastLog?.[0]?.run_at || null,
-            last_error: lastLog?.[0]?.error || null
+        // Log error if file was selected
+        const file = formData.get('file') as File
+        if (file) {
+            await supabase.from('finance_upload_logs').insert({
+                filename: file.name,
+                upload_type: 'orders',
+                status: 'error',
+                error_message: e.message
+            })
         }
-    } catch (e) {
-        return { paid: 0, unpaid: 0, last_checked: null, last_error: null }
+
+        return { success: false, error: e.message }
     }
 }
 
-export async function getShipmentPackages(filter: 'all' | 'paid' | 'unpaid' = 'all') {
+export async function importFinancePaymentsExcel(formData: FormData): Promise<ImportResult> {
     try {
-        let query = supabase
-            .from('shipment_packages')
-            .select(`
-                *,
-                shipment_package_items (*)
-            `)
+        const file = formData.get('file') as File
+        if (!file) throw new Error('Dosya seçilmedi.')
+
+        const buffer = await file.arrayBuffer()
+        const workbook = XLSX.read(buffer, { type: 'buffer' })
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]]
+        const jsonData = XLSX.utils.sheet_to_json(worksheet)
+
+        const rows = jsonData as any[]
+        const historyInserts: any[] = []
+        // Key is now OrderNumber + PackageNo
+        const aggregated = new Map<string, {
+            orderNumber: string,
+            net: number,
+            commission: number,
+            discount: number,
+            penalty: number,
+            paidAt: string | null,
+            ref: string | null,
+            packageNo: string | null
+        }>()
+
+        for (const row of rows) {
+            // Normalize Order Number immediately
+            const rawOrderNo = row['Sipariş No'] || row['Alt Sipariş No'] || row['Sipariş Numarası']
+            const orderNumber = normalizeOrderId(rawOrderNo)
+
+            if (!orderNumber) continue
+
+            // Normalize Package Number
+            const rawPackageNo = row['Paket Numarası'] || row['Paket No']
+            const packageNo = normalizeOrderId(rawPackageNo)
+
+            // 1. Precise Column Mapping per User Request
+            // "Toplam Tutar" -> gross_amount
+            // "TY Hakediş" -> ty_commission
+            // "Satıcı Hakediş" -> net_amount
+
+            let gross = parseTRNumber(row['Toplam Tutar'] || row['Brüt Tutar'] || row['Tutar'] || row['Satış Tutarı'] || 0)
+            const commission = parseTRNumber(row['TY Hakediş'] || row['Komisyon Tutarı'] || row['Komisyon'] || row['KOMİSYON'] || 0)
+            const discount = parseTRNumber(row['Pazaryeri İndirimi'] || row['İndirim'] || 0)
+
+            // Explicit Net columns first
+            let net = parseTRNumber(row['Satıcı Hakediş'] || row['Net Tutar'] || row['Net Hakediş'] || 0)
+
+            // If Gross is 0 but Net is provided, back-calculate Gross
+            // Gross = Net + Commission + Discount + Penalty
+            // (Penalty is tricky because it might be part of the net deduction)
+
+            const paidAt = parseTRDate(row['İşlem Tarihi'] || row['Vade Tarihi'])
+            // packageNo already normalized above
+            const ref = row['Kayıt No'] || row['Fatura No'] || row['Ödeme Referans No'] || row['Ekstre Referans No'] || null
+
+            const rawType = (row['İşlem Tipi'] || row['islem_tipi'] || '').toString()
+            const typeLower = rawType.toLowerCase()
+
+            // Identify penalty/cuts 
+            // If the row type explicitly says "Ceza" or "Kesinti", the Net amount is likely the penalty (negative or positive depending on context)
+            let penalty = 0
+            if (typeLower.includes('ceza') || typeLower.includes('kesinti')) {
+                // Usually these rows have a 'Tutar' which is the penalty amount.
+                // If gross is present, use it as penalty base.
+                penalty = Math.abs(gross || net)
+            } else {
+                penalty = parseTRNumber(row['Ceza Tutarı'] || row['Ceza'] || 0)
+            }
+
+            // If we didn't find specific Net column, calculate it
+            if (net === 0 && (row['Satıcı Hakediş'] === undefined && row['Net Tutar'] === undefined && row['Net Hakediş'] === undefined)) {
+                net = gross - commission - discount - penalty
+            }
+
+            // If Gross is still 0 but we have Net, back-fill Gross for consistency
+            if (gross === 0 && net !== 0) {
+                gross = net + commission + discount + penalty
+            }
+
+            // Auto-negate gross amount for specific transaction types if they are positive but should be deductions
+            // This is purely for UI display logic matching the user's "negative representation" requirement
+            if (gross > 0) {
+                if (typeLower.includes('iptal') ||
+                    typeLower.includes('iade') ||
+                    typeLower.includes('indirim') ||
+                    typeLower.includes('ceza') ||
+                    typeLower.includes('kesinti')) {
+                    gross = -gross
+                }
+            }
+
+            // 2. Add to history (Every unique row from Excel)
+            historyInserts.push({
+                order_number: orderNumber,
+                package_no: packageNo,
+                paid_at: paidAt,
+                amount: gross,
+                commission: commission,
+                discount: discount,
+                penalty: penalty,
+                transaction_type: rawType,
+                raw_row_json: row,
+                created_at: new Date().toISOString()
+            })
+
+            // 3. Aggregate for the summary update
+            // KEY: OrderNumber + PackageNo
+            const key = `${orderNumber}_${packageNo || 'HEAD'}`
+
+            if (!aggregated.has(key)) {
+                aggregated.set(key, {
+                    orderNumber,
+                    net,
+                    commission,
+                    discount,
+                    penalty,
+                    paidAt,
+                    ref,
+                    packageNo
+                })
+            } else {
+                const prev = aggregated.get(key)!
+                prev.net += net
+                prev.commission += commission
+                prev.discount += discount
+                prev.penalty += penalty
+                if (!prev.packageNo) prev.packageNo = packageNo
+                if (!prev.ref) prev.ref = ref
+            }
+        }
+
+        let processed = rows.length, matched = 0, unmatched = 0
+        const items = Array.from(aggregated.entries())
+        const orderNumbers = items.map(([, val]) => val.orderNumber)
+
+        // Find targets
+        const { data: potentialOrders } = await supabase
+            .from('finance_orders')
+            .select('id, order_number, package_no, payment_status, payment_reference')
+            .in('order_number', orderNumbers)
+
+        // Map by Order_Package
+        const orderIdMap = new Map<string, any>()
+        potentialOrders?.forEach(o => {
+            // Apply normalization to DB data for consistent matching
+            const nOrder = normalizeOrderId(o.order_number)
+            const nPackage = normalizeOrderId(o.package_no)
+            if (nOrder) {
+                const k = `${nOrder}_${nPackage || 'HEAD'}`
+                orderIdMap.set(k, o)
+            }
+        })
+
+        const updateTasks: Promise<any>[] = []
+        const unmatchedInserts: any[] = []
+
+        for (const [key, item] of items) {
+            let targetOrder = orderIdMap.get(key)
+
+            console.log(`[PAYMENT DEBUG] Processing key: ${key}, orderNumber: ${item.orderNumber}, packageNo: ${item.packageNo}`)
+
+            // PRIORITY: Fallback to Order Number only if strict key match fails
+            if (!targetOrder) {
+                // Try strictly by Order Number (normalized)
+                targetOrder = potentialOrders?.find(o => normalizeOrderId(o.order_number) === item.orderNumber)
+                if (targetOrder) {
+                    console.log(`[PAYMENT DEBUG] ✓ Fallback match found for ${item.orderNumber} -> DB order: ${targetOrder.order_number}, DB package: ${targetOrder.package_no}`)
+                } else {
+                    console.log(`[PAYMENT DEBUG] ✗ No match found for ${item.orderNumber}`)
+                }
+            } else {
+                console.log(`[PAYMENT DEBUG] ✓ Exact match found for ${key}`)
+            }
+
+            if (targetOrder) {
+                const task = (async () => {
+                    // Recalculate everything from DB history for this SPECIFIC order+package
+                    let query = supabase
+                        .from('finance_payment_rows')
+                        .select('amount, commission, discount, penalty')
+                        .eq('order_number', item.orderNumber)
+
+                    if (item.packageNo) {
+                        query = query.eq('package_no', item.packageNo)
+                    } else {
+                        // If no packageNo in aggregation, handle carefully. 
+                        // Usually if aggregated item has no packageNo, targetOrder likely has no packageNo too (HEAD).
+                        // Or matched by orderNumber alone if we weren't careful.
+                        // But here we matched by exact key.
+                        query = query.is('package_no', null)
+                    }
+
+                    const { data: rowsInDb } = await query
+
+                    // Add current row inserts
+                    const currentRowsForOrder = historyInserts.filter(h =>
+                        h.order_number === item.orderNumber &&
+                        (h.package_no === item.packageNo || (!h.package_no && !item.packageNo))
+                    )
+                    const allRelevantRows = [...(rowsInDb || []), ...currentRowsForOrder]
+
+                    const totalNet = allRelevantRows.reduce((s, r) => s + (Number(r.amount) - (Number(r.commission) || 0) - (Number(r.discount) || 0) - (Number(r.penalty) || 0)), 0)
+                    const totalGross = allRelevantRows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+                    const totalComm = allRelevantRows.reduce((s, r) => s + Math.abs(Number(r.commission) || 0), 0)
+                    const totalDisc = allRelevantRows.reduce((s, r) => s + Math.abs(Number(r.discount) || 0), 0)
+                    const totalPen = allRelevantRows.reduce((s, r) => s + Math.abs(Number(r.penalty) || 0), 0)
+
+                    // User Rule Update: If it is in the payment file, it is PAID.
+                    // Absolutely no conditions on amount or date.
+                    const status = 'paid'
+
+                    const updateData: any = {
+                        payment_status: status,
+                        paid_at: item.paidAt,
+                        amount: totalGross,
+                        paid_amount: totalNet,
+                        commission_amount: totalComm,
+                        discount_amount: totalDisc,
+                        penalty_amount: totalPen,
+                        payment_reference: item.ref || targetOrder.payment_reference,
+                        updated_at: new Date().toISOString()
+                    }
+
+
+                    const { error: updateError } = await supabase.from('finance_orders').update(updateData).eq('id', targetOrder.id)
+
+                    if (updateError) {
+                        console.error(`[PAYMENT DEBUG] ✗ Update failed for order ${item.orderNumber}:`, updateError)
+                    } else {
+                        console.log(`[PAYMENT DEBUG] ✓ Successfully updated order ${item.orderNumber} to PAID status`)
+                    }
+                })()
+                updateTasks.push(task)
+                matched++
+            } else {
+                // For unmatched, we use the aggregated view for the summary table
+                unmatchedInserts.push({
+                    order_number: item.orderNumber,
+                    package_no: item.packageNo || null,
+                    paid_at: item.paidAt,
+                    paid_amount: item.net,
+                    commission_amount: Math.abs(item.commission),
+                    discount_amount: Math.abs(item.discount),
+                    penalty_amount: Math.abs(item.penalty),
+                    raw_row_json: historyInserts.find(h => h.order_number === item.orderNumber && h.package_no === item.packageNo)?.raw_row_json // Use first matching row
+                })
+                unmatched++
+            }
+        }
+
+        // Save history in chunks
+        if (historyInserts.length > 0) {
+            for (let i = 0; i < historyInserts.length; i += 100) {
+                await supabase.from('finance_payment_rows').insert(historyInserts.slice(i, i + 100))
+            }
+        }
+
+        // Execution in batches
+        for (let i = 0; i < updateTasks.length; i += 50) {
+            await Promise.all(updateTasks.slice(i, i + 50))
+        }
+
+        if (unmatchedInserts.length > 0) {
+            for (let i = 0; i < unmatchedInserts.length; i += 100) {
+                await supabase.from('unmatched_payment_rows').insert(unmatchedInserts.slice(i, i + 100))
+            }
+        }
+
+        revalidatePath('/finans/odemeler')
+
+        // Log success
+        await supabase.from('finance_upload_logs').insert({
+            filename: file.name,
+            upload_type: 'payments',
+            processed_count: processed,
+            matched_count: matched,
+            unmatched_count: unmatched,
+            status: 'success'
+        })
+
+        return { success: true, processed, matched, unmatched }
+    } catch (e: any) {
+        console.error('importFinancePaymentsExcel error:', e)
+        const file = formData.get('file') as File
+        if (file) {
+            await supabase.from('finance_upload_logs').insert({
+                filename: file.name,
+                upload_type: 'payments',
+                status: 'error',
+                error_message: e.message
+            })
+        }
+        return { success: false, error: e.message }
+    }
+}
+
+export async function getFinanceOrders() {
+    try {
+        const { data, error } = await supabase
+            .from('finance_orders')
+            .select('*')
             .order('order_date', { ascending: false })
+            .limit(10000)
 
-        if (filter === 'paid') query = query.eq('payment_status', 'paid')
-        if (filter === 'unpaid') query = query.eq('payment_status', 'unpaid')
-
-        const { data, error } = await query
-
-        if (error) throw error
-        return data as any[]
+        if (error) {
+            console.error('getFinanceOrders database error:', error)
+            return []
+        }
+        return (data || []) as FinanceOrder[]
     } catch (e) {
-        console.error('getShipmentPackages error:', e)
+        console.error('getFinanceOrders unexpected error:', e)
         return []
     }
 }
 
-export async function resetDatabase() {
+export async function getFinanceStats() {
     try {
-        console.log('[LiaBlancos] Resetting database...')
-        // Delete child items first to avoid FK constraint issues
-        await supabase.from('shipment_package_items').delete().neq('id', 0) // Delete all
+        const now = new Date().toISOString()
 
-        // Delete packages
-        await supabase.from('shipment_packages').delete().neq('id', '00000000-0000-0000-0000-000000000000') // Delete all UUIDs
+        // Initialize default results
+        let paidCount = 0, unpaidCount = 0, overdueCount = 0
+        let totalPaid = 0, totalUnpaid = 0
 
-        // Delete unmatched payments
-        await supabase.from('unmatched_payments').delete().neq('id', 0)
+        // Execute queries with individual error handling to prevent total failure
+        const [paidRes, unpaidRes, overdueRes, paidAmtRes, unpaidAmtRes] = await Promise.all([
+            supabase.from('finance_orders').select('*', { count: 'exact', head: true }).eq('payment_status', 'paid'),
+            supabase.from('finance_orders').select('*', { count: 'exact', head: true }).eq('payment_status', 'unpaid'),
+            supabase.from('finance_orders').select('*', { count: 'exact', head: true }).eq('payment_status', 'unpaid').lt('expected_payout_at', now),
+            supabase.from('finance_orders').select('paid_amount').eq('payment_status', 'paid'),
+            supabase.from('finance_orders').select('sale_total').eq('payment_status', 'unpaid')
+        ])
 
-        // Delete logs
-        await supabase.from('payment_sync_logs').delete().neq('id', 0)
+        if (!paidRes.error) paidCount = paidRes.count || 0
+        if (!unpaidRes.error) unpaidCount = unpaidRes.count || 0
+        if (!overdueRes.error) overdueCount = overdueRes.count || 0
+
+        if (!paidAmtRes.error && paidAmtRes.data) {
+            totalPaid = paidAmtRes.data.reduce((sum, row) => sum + (Number(row.paid_amount) || 0), 0)
+        }
+        if (!unpaidAmtRes.error && unpaidAmtRes.data) {
+            totalUnpaid = unpaidAmtRes.data.reduce((sum, row) => sum + (Number(row.sale_total) || 0), 0)
+        }
+
+        return {
+            paidCount,
+            unpaidCount,
+            overdueCount,
+            paidAmount: totalPaid,
+            unpaidAmount: totalUnpaid
+        }
+    } catch (e) {
+        console.error('getFinanceStats unexpected error:', e)
+        return {
+            paidCount: 0,
+            unpaidCount: 0,
+            overdueCount: 0,
+            paidAmount: 0,
+            unpaidAmount: 0
+        }
+    }
+}
+
+export async function resetFinanceData() {
+    try {
+        const { error: error1 } = await supabase.from('finance_orders').delete().neq('id', '00000000-0000-0000-0000-000000000000') // Delete all
+        const { error: error2 } = await supabase.from('unmatched_payment_rows').delete().neq('id', '00000000-0000-0000-0000-000000000000') // Delete all
+
+        if (error1 || error2) throw new Error('Veriler temizlenirken hata oluştu.')
+
+        // Also clear history
+        await supabase.from('finance_payment_rows').delete().neq('id', '00000000-0000-0000-0000-000000000000')
 
         revalidatePath('/finans/odemeler')
         return { success: true }
-    } catch (error: any) {
-        console.error('resetDatabase error:', error)
-        return { error: error.message }
+    } catch (e: any) {
+        console.error('resetFinanceData error:', e)
+        return { success: false, error: e.message }
     }
 }
 
-// ------ EXCEL IMPORT (Trendyol Payments) ------
-import * as XLSX from 'xlsx'
-
-export async function importPaymentExcel(formData: FormData) {
+export async function getFinanceUploadLogs() {
     try {
-        const file = formData.get('file') as File
-        if (!file) throw new Error('Dosya yüklenemedi.')
+        const { data, error } = await supabase
+            .from('finance_upload_logs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(20)
 
-        const buffer = await file.arrayBuffer()
-        const workbook = XLSX.read(buffer, { type: 'buffer' })
-        const sheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[sheetName]
-        const jsonData = XLSX.utils.sheet_to_json(worksheet)
+        if (error) {
+            console.error('getFinanceUploadLogs database error:', error)
+            return []
+        }
+        return (data || []) as FinanceUploadLog[]
+    } catch (e) {
+        console.error('getFinanceUploadLogs unexpected error:', e)
+        return []
+    }
+}
 
-        let processed = 0
-        let matched = 0
-        const runAt = new Date().toISOString()
+export async function syncUnmatchedPayments() {
+    try {
+        const { data: unmatchedRows, error: fetchError } = await supabase
+            .from('unmatched_payment_rows')
+            .select('*')
+            .limit(5000)
 
-        // Log import start
-        const { data: importLog, error: logError } = await supabase
-            .from('payment_imports')
-            .insert({ filename: file.name })
-            .select()
-            .single()
+        if (fetchError) throw fetchError
+        if (!unmatchedRows || unmatchedRows.length === 0) return { success: true, matched: 0 }
 
-        if (logError) console.error('Import log error:', logError)
+        const orderNumbers = Array.from(new Set(unmatchedRows.map(r => r.order_number).filter(Boolean)))
+        const { data: matchedOrders, error: orderError } = await supabase
+            .from('finance_orders')
+            .select('id, order_number, payment_status, paid_amount, commission_amount, discount_amount, penalty_amount, paid_at, payment_reference')
+            .in('order_number', orderNumbers)
 
-        console.log(`[Excel Import] Processing ${jsonData.length} rows...`)
+        if (orderError) throw orderError
+        if (!matchedOrders || matchedOrders.length === 0) return { success: true, matched: 0 }
 
-        for (const r of jsonData) {
-            const row = r as any
-            // Adjust these keys based on actual Trendyol Excel headers
-            // Assuming common headers: "Sipariş Numarası", "İşlem Tarihi", "Tutar", "İşlem Numarası" etc.
-            // We'll try to support a few variations or use loose matching
+        const aggregatedSync = new Map<string, {
+            net: number,
+            commission: number,
+            discount: number,
+            penalty: number,
+            paidAt: string | null,
+            ref: string | null,
+            ids: string[]
+        }>()
 
-            const orderNumber = row['Sipariş Numarası']?.toString() || row['Sipariş No']?.toString() || row['Order Number']?.toString()
-            const packageId = row['Paket Numarası']?.toString() || row['Paket No']?.toString() || row['Shipment Package ID']?.toString()
-            const amount = row['Tutar'] || row['Amount'] || row['Ödenen Tutar']
-            const date = row['İşlem Tarihi'] || row['Transaction Date'] || row['Tarih']
-            const ref = row['İşlem Numarası'] || row['Transaction ID'] || row['Referans'] || `EXCEL-${Date.now()}-${Math.random()}`
-
-            if (!orderNumber && !packageId) continue // Skip invalid rows
-
-            processed++
-            let found = false
-
-            // Strategy 1: Match by Order Number (Preferred)
-            if (orderNumber) {
-                const { data: pkgs } = await supabase
-                    .from('shipment_packages')
-                    .select('id')
-                    .eq('order_number', orderNumber)
-
-                if (pkgs && pkgs.length > 0) {
-                    // Update ALL packages for this order as paid (since payment is usually per order)
-                    // Or if specific amount match is needed, we might need logic.
-                    // For now, mark all as paid if order matches.
-                    await supabase.from('shipment_packages').update({
-                        payment_status: 'paid',
-                        paid_at: new Date(date).toISOString(),
-                        paid_amount: amount, // Note: This applies total amount to each package? Ideally split, but usually acceptable for status tracking
-                        payment_reference: ref,
-                        payment_source: 'excel',
-                        payment_last_checked_at: runAt,
-                        updated_at: runAt
-                    }).eq('order_number', orderNumber)
-
-                    matched += pkgs.length // specific packages updated
-                    found = true
-                }
-            }
-
-            // Strategy 2: Match by Package ID (Fallback)
-            if (!found && packageId) {
-                const { data: pkg } = await supabase
-                    .from('shipment_packages')
-                    .select('id')
-                    .eq('shipment_package_id', packageId)
-                    .maybeSingle()
-
-                if (pkg) {
-                    await supabase.from('shipment_packages').update({
-                        payment_status: 'paid',
-                        paid_at: new Date(date).toISOString(),
-                        paid_amount: amount,
-                        payment_reference: ref,
-                        payment_source: 'excel',
-                        payment_last_checked_at: runAt,
-                        updated_at: runAt
-                    }).eq('id', pkg.id)
-                    matched++
-                    found = true
-                }
-            }
-
-            // Log unmatched
-            if (!found) {
-                await supabase.from('unmatched_payments').upsert({
-                    order_number: orderNumber,
-                    shipment_package_id: packageId,
-                    transaction_date: date ? new Date(date).toISOString() : new Date().toISOString(),
-                    amount: amount,
-                    payment_reference: ref + '-EXCEL',
-                    raw_data: row
-                }, { onConflict: 'payment_reference' })
+        for (const row of unmatchedRows) {
+            if (!aggregatedSync.has(row.order_number)) {
+                aggregatedSync.set(row.order_number, {
+                    net: Number(row.paid_amount) || 0,
+                    commission: Number(row.commission_amount) || 0,
+                    discount: Number(row.discount_amount) || 0,
+                    penalty: Number(row.penalty_amount) || 0,
+                    paidAt: row.paid_at,
+                    ref: row.raw_row_json?.['Ekstre Referans No'] || row.raw_row_json?.['Kayıt No'] || null,
+                    ids: [row.id]
+                })
+            } else {
+                const prev = aggregatedSync.get(row.order_number)!
+                prev.net += Number(row.paid_amount) || 0
+                prev.commission += Number(row.commission_amount) || 0
+                prev.discount += Number(row.discount_amount) || 0
+                prev.penalty += Number(row.penalty_amount) || 0
+                if (!prev.ref) prev.ref = row.raw_row_json?.['Ekstre Referans No'] || row.raw_row_json?.['Kayıt No'] || null
+                prev.ids.push(row.id)
             }
         }
 
-        // Update log
-        if (importLog) {
-            await supabase.from('payment_imports').update({
-                processed_count: processed,
-                matched_count: matched
-            }).eq('id', importLog.id)
+        const orderDataMap = new Map(matchedOrders.map(o => [o.order_number, o]))
+        let matchedCount = 0
+        const tasks: Promise<any>[] = []
+
+        for (const [orderNumber, item] of aggregatedSync.entries()) {
+            const existingOrder = orderDataMap.get(orderNumber)
+            if (existingOrder) {
+                const task = (async () => {
+                    const isAlreadyPaid = existingOrder.payment_status === 'paid'
+                    const newPaidAmount = isAlreadyPaid ? (Number(existingOrder.paid_amount || 0) + item.net) : item.net
+                    const newComm = isAlreadyPaid ? (Number(existingOrder.commission_amount || 0) + Math.abs(item.commission)) : Math.abs(item.commission)
+                    const newDisc = isAlreadyPaid ? (Number(existingOrder.discount_amount || 0) + Math.abs(item.discount)) : Math.abs(item.discount)
+                    const newPen = isAlreadyPaid ? (Number(existingOrder.penalty_amount || 0) + Math.abs(item.penalty)) : Math.abs(item.penalty)
+
+                    await supabase.from('finance_orders').update({
+                        payment_status: 'paid',
+                        paid_at: item.paidAt || (isAlreadyPaid ? existingOrder.paid_at : null),
+                        paid_amount: newPaidAmount,
+                        commission_amount: newComm,
+                        discount_amount: newDisc,
+                        penalty_amount: newPen,
+                        payment_reference: item.ref || (isAlreadyPaid ? existingOrder.payment_reference : null),
+                        updated_at: new Date().toISOString()
+                    }).eq('id', existingOrder.id)
+
+                    await supabase.from('unmatched_payment_rows').delete().in('id', item.ids)
+                })()
+                tasks.push(task)
+                matchedCount++
+            }
+        }
+
+        for (let i = 0; i < tasks.length; i += 50) {
+            await Promise.all(tasks.slice(i, i + 50))
         }
 
         revalidatePath('/finans/odemeler')
-        return { success: true, processed, matched, unmatched: processed - matched }
-
-    } catch (error: any) {
-        console.error('Excel import error:', error)
-        return { error: error.message }
+        return { success: true, matched: matchedCount }
+    } catch (e: any) {
+        console.error('syncUnmatchedPayments error:', e)
+        return { success: false, error: e.message }
     }
 }
 
-export async function importOrderExcel(formData: FormData) {
+export async function repairFinanceData() {
     try {
-        const file = formData.get('file') as File
-        if (!file) throw new Error('Dosya yüklenemedi.')
+        const { data: allHistory, error: historyError } = await supabase
+            .from('finance_payment_rows')
+            .select('*')
 
-        const buffer = await file.arrayBuffer()
-        const workbook = XLSX.read(buffer, { type: 'buffer' })
-        const sheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[sheetName]
-        const jsonData = XLSX.utils.sheet_to_json(worksheet)
+        if (historyError) throw historyError
+        if (!allHistory || allHistory.length === 0) {
+            return { success: false, error: 'Hesaplama yapılamadı: Ödeme geçmişi boş. Lütfen ödeme dosyalarını tekrar yükleyin.' }
+        }
 
-        let processedCount = 0
-        const orders = new Map<string, {
-            orderNumber: string
-            packageId: string | null
-            customerName: string
-            totalPrice: number
-            orderDate: string
-            deliveryDate: string | null
-            status: string
-            dueAt: string | null
-            items: any[]
+        const aggregated = new Map<string, {
+            net: number,
+            commission: number,
+            discount: number,
+            penalty: number,
+            paidAt: string | null,
+            ref: string | null
         }>()
 
-        // Helper function to safely parse Excel dates
-        const parseExcelDate = (value: any): string | null => {
-            if (!value) return null
-
-            try {
-                // If it's already a Date object
-                if (value instanceof Date) {
-                    return value.toISOString()
-                }
-
-                // If it's an Excel serial number (number of days since 1900-01-01)
-                if (typeof value === 'number') {
-                    const excelEpoch = new Date(1900, 0, 1)
-                    const days = value - 2 // Excel incorrectly treats 1900 as leap year
-                    const date = new Date(excelEpoch.getTime() + days * 24 * 60 * 60 * 1000)
-                    return date.toISOString()
-                }
-
-                // If it's a string, try to parse it
-                if (typeof value === 'string') {
-                    // Try direct parsing first
-                    const parsed = new Date(value)
-                    if (!isNaN(parsed.getTime())) {
-                        return parsed.toISOString()
-                    }
-
-                    // Try DD.MM.YYYY format (Turkish)
-                    const parts = value.split('.')
-                    if (parts.length === 3) {
-                        const [day, month, year] = parts.map(p => parseInt(p))
-                        const date = new Date(year, month - 1, day)
-                        if (!isNaN(date.getTime())) {
-                            return date.toISOString()
-                        }
-                    }
-                }
-
-                return null
-            } catch (e) {
-                console.error('Date parsing error:', e, value)
-                return null
-            }
-        }
-
-        // Helper function to find column value with multiple possible names
-        const getColumnValue = (row: any, possibleNames: string[]): any => {
-            for (const name of possibleNames) {
-                if (row[name] !== undefined && row[name] !== null && row[name] !== '') {
-                    return row[name]
-                }
-            }
-            return null
-        }
-
-        console.log(`[Order Excel Import] Processing ${jsonData.length} rows...`)
-
-        // Prepare debug info
-        let debugInfo = `Toplam ${jsonData.length} satır bulundu.`
-
-        let skippedCount = 0
-
-        // 1. Group rows by Order Number (UNIQUE KEY)
-        for (const r of jsonData) {
-            const row = r as any
-
-            // Try multiple variations for order number
-            const orderNumber = getColumnValue(row, [
-                'Sipariş Numarası',
-                'Sipariş No',
-                'Order Number',
-                'OrderNumber',
-                'Siparis Numarasi'
-            ])?.toString()
-
-            if (!orderNumber) {
-                skippedCount++
-                continue
-            }
-
-            const packageId = getColumnValue(row, ['Paket No', 'Paket Numarası', 'Package ID'])?.toString() || null
-            const status = getColumnValue(row, ['Sipariş Statüsü', 'Satır Statüsü', 'Status', 'Durum']) || ''
-            const deliveryDate = getColumnValue(row, ['Teslim Tarihi', 'Delivery Date', 'Teslimat Tarihi'])
-
-            // Item details
-            const productName = getColumnValue(row, ['Ürün Adı', 'Product Name', 'Urun Adi']) || ''
-            const barcode = getColumnValue(row, ['Barkod', 'Barcode']) || ''
-            const quantity = parseInt(getColumnValue(row, ['Adet', 'Quantity', 'Miktar']) || '1')
-            const price = parseFloat(getColumnValue(row, [
-                'Satış Tutarı',
-                'Birim Satış Fiyatı (KDV Dahil)',
-                'Price',
-                'Tutar'
-            ]) || '0')
-            const customer = getColumnValue(row, ['Müşteri Adı', 'Customer Name', 'Alıcı']) || ''
-            const orderDateRaw = getColumnValue(row, ['Sipariş Tarihi', 'Order Date'])
-            const orderDate = parseExcelDate(orderDateRaw) || new Date().toISOString()
-            const total = parseFloat(getColumnValue(row, ['Sipariş Tutarı', 'Order Total', 'Toplam']) || '0')
-
-            // Calculate due_at if order is delivered
-            let dueAt: string | null = null
-            let deliveryDateParsed: string | null = null
-
-            if (deliveryDate) {
-                deliveryDateParsed = parseExcelDate(deliveryDate)
-
-                if (deliveryDateParsed && (status === 'Teslim Edildi' || status === 'Delivered' || status.includes('Teslim'))) {
-                    const deliveryDateObj = new Date(deliveryDateParsed)
-                    deliveryDateObj.setDate(deliveryDateObj.getDate() + 28) // Add 28 days
-                    dueAt = deliveryDateObj.toISOString()
-                }
-            }
-
-            if (!orders.has(orderNumber)) {
-                orders.set(orderNumber, {
-                    orderNumber,
-                    packageId,
-                    customerName: customer,
-                    totalPrice: total,
-                    orderDate: orderDate,
-                    deliveryDate: deliveryDateParsed,
-                    status,
-                    dueAt,
-                    items: []
+        for (const row of allHistory) {
+            if (!aggregated.has(row.order_number)) {
+                aggregated.set(row.order_number, {
+                    net: Number(row.amount) || 0,
+                    commission: Number(row.commission) || 0,
+                    discount: Number(row.discount) || 0,
+                    penalty: Number(row.penalty) || 0,
+                    paidAt: row.paid_at,
+                    ref: row.raw_row_json?.['Ekstre Referans No'] || row.raw_row_json?.['Kayıt No'] || null
                 })
             } else {
-                // Update delivery info if this row has more recent data
-                const existing = orders.get(orderNumber)!
-                if (deliveryDateParsed && !existing.deliveryDate) {
-                    existing.deliveryDate = deliveryDateParsed
-                    existing.status = status
-                    existing.dueAt = dueAt
-                }
-            }
-
-            // Add item to order
-            if (productName) {
-                orders.get(orderNumber)?.items.push({
-                    product_name: productName,
-                    barcode: barcode,
-                    quantity: quantity,
-                    price: price
-                })
+                const prev = aggregated.get(row.order_number)!
+                prev.net += Number(row.amount) || 0
+                prev.commission += Number(row.commission) || 0
+                prev.discount += Number(row.discount) || 0
+                prev.penalty += Number(row.penalty) || 0
+                if (!prev.ref) prev.ref = row.raw_row_json?.['Ekstre Referans No'] || row.raw_row_json?.['Kayıt No'] || null
             }
         }
 
-        console.log(`[Order Excel Import] Found ${orders.size} unique orders. Saving...`)
-
-        // 2. OPTIMIZED: Batch database operations for speed
-        const orderNumbers = Array.from(orders.keys())
-
-        // Step 1: Get all existing orders in one query
-        const { data: existingPackages } = await supabase
-            .from('shipment_packages')
+        const orderNumbers = Array.from(aggregated.keys())
+        const { data: existingOrders } = await supabase
+            .from('finance_orders')
             .select('id, order_number')
             .in('order_number', orderNumbers)
 
-        const existingMap = new Map(existingPackages?.map(p => [p.order_number, p.id]) || [])
+        const orderIdMap = new Map(existingOrders?.map(o => [o.order_number, o.id]) || [])
+        let repairedCount = 0
+        const updateTasks: Promise<any>[] = []
 
-        // Step 2: Prepare batch inserts and updates
-        const toInsert: any[] = []
-        const toUpdate: any[] = []
-        const orderIdMap = new Map<string, string>() // orderNumber -> id
-
-        for (const [orderNum, data] of orders) {
-            const existingId = existingMap.get(orderNum)
-
-            if (existingId) {
-                // Existing order - prepare for update
-                toUpdate.push({
-                    id: existingId,
-                    shipment_package_id: data.packageId,
-                    customer_name: data.customerName,
-                    total_price: data.totalPrice,
-                    order_date: data.orderDate,
-                    delivery_date: data.deliveryDate,
-                    status: data.status,
-                    due_at: data.dueAt,
-                    updated_at: new Date().toISOString()
-                })
-                orderIdMap.set(orderNum, existingId)
-            } else {
-                // New order - prepare for insert
-                toInsert.push({
-                    order_number: data.orderNumber,
-                    shipment_package_id: data.packageId,
-                    customer_name: data.customerName,
-                    total_price: data.totalPrice,
-                    order_date: data.orderDate,
-                    delivery_date: data.deliveryDate,
-                    status: data.status,
-                    due_at: data.dueAt,
-                    payment_status: 'unpaid'
-                })
+        for (const [orderNumber, item] of aggregated.entries()) {
+            const targetId = orderIdMap.get(orderNumber)
+            if (targetId) {
+                const task = (async () => {
+                    await supabase.from('finance_orders').update({
+                        payment_status: 'paid',
+                        paid_at: item.paidAt,
+                        paid_amount: item.net,
+                        commission_amount: Math.abs(item.commission),
+                        discount_amount: Math.abs(item.discount),
+                        penalty_amount: Math.abs(item.penalty),
+                        payment_reference: item.ref,
+                        updated_at: new Date().toISOString()
+                    }).eq('id', targetId)
+                })()
+                updateTasks.push(task)
+                repairedCount++
             }
         }
 
-        // Step 3: Bulk insert new orders
-        if (toInsert.length > 0) {
-            const { data: inserted } = await supabase
-                .from('shipment_packages')
-                .insert(toInsert)
-                .select('id, order_number')
-
-            inserted?.forEach(pkg => orderIdMap.set(pkg.order_number, pkg.id))
+        for (let i = 0; i < updateTasks.length; i += 50) {
+            await Promise.all(updateTasks.slice(i, i + 50))
         }
-
-        // Step 4: Bulk update existing orders (Supabase doesn't have native bulk update, so we batch them)
-        for (const update of toUpdate) {
-            await supabase
-                .from('shipment_packages')
-                .update(update)
-                .eq('id', update.id)
-        }
-
-        // Step 5: Get all package IDs to delete old items
-        const allPackageIds = Array.from(orderIdMap.values())
-
-        if (allPackageIds.length > 0) {
-            // Delete all old items in one query
-            await supabase
-                .from('shipment_package_items')
-                .delete()
-                .in('package_id', allPackageIds)
-
-            // Step 6: Prepare all items for bulk insert
-            const allItems: any[] = []
-            for (const [orderNum, data] of orders) {
-                const packageId = orderIdMap.get(orderNum)
-                if (packageId && data.items.length > 0) {
-                    data.items.forEach(item => {
-                        allItems.push({
-                            package_id: packageId,
-                            ...item
-                        })
-                    })
-                }
-            }
-
-            // Bulk insert all items
-            if (allItems.length > 0) {
-                await supabase
-                    .from('shipment_package_items')
-                    .insert(allItems)
-            }
-        }
-
-        processedCount = orders.size
 
         revalidatePath('/finans/odemeler')
-        return {
-            success: true,
-            count: processedCount,
-            debug: debugInfo,
-            skipped: skippedCount,
-            totalRows: jsonData.length
-        }
-
-    } catch (error: any) {
-        console.error('Order Excel import error:', error)
-        return { error: error.message }
+        return { success: true, repaired: repairedCount }
+    } catch (e: any) {
+        console.error('repairFinanceData error:', e)
+        return { success: false, error: e.message }
     }
 }
 
-export async function getUnmatchedPayments() {
-    try {
-        const { data, error } = await supabase
-            .from('unmatched_payments')
-            .select('*')
-            .order('transaction_date', { ascending: false })
+export async function getFinanceOrderDetails(orderNumber: string, packageNo?: string | null) {
+    let query = supabase
+        .from('finance_payment_rows')
+        .select('*')
+        .eq('order_number', orderNumber)
 
-        if (error) throw error
-        return data as any[]
-    } catch (e) {
-        console.error('getUnmatchedPayments error:', e)
+    if (packageNo) {
+        query = query.eq('package_no', packageNo)
+    } else {
+        // If specific null check is needed or if we just want all for order
+        // The user requirement is distinct cards. So if the card represents a package, we filter by it.
+        // If packageNo is explicitly null (meaning 'HEAD'), we filter where package_no is null.
+        if (packageNo === null) {
+            query = query.is('package_no', null)
+        }
+        // If undefined, we might return all? But for this specific UI flow, we usually pass what we have.
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: true })
+
+    if (error) {
+        console.error('getFinanceOrderDetails error:', error)
         return []
     }
+    return data as FinancePaymentRow[]
 }

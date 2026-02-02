@@ -109,6 +109,7 @@ export default function AppShell({ children }: AppShellProps) {
         { name: 'Ödemeler', href: '/finans/odemeler', icon: Wallet },
     ]
 
+
     const otherNavigation = [
         { name: 'Raflar', href: '/shelves', icon: LibrarySquare },
         { name: 'Trendyol', href: '/trendyol', icon: ShoppingBag },
@@ -307,6 +308,7 @@ export default function AppShell({ children }: AppShellProps) {
                             </div>
                         </div>
                     </div>
+
 
                     <div className="pt-4 pb-2">
                         <div className="px-4 py-2">
@@ -612,6 +614,7 @@ export default function AppShell({ children }: AppShellProps) {
                                 </div>
                             </div>
                         </div>
+
 
                         <div className="pt-6 border-t border-white/5">
                             {otherNavigation.map((item) => (
