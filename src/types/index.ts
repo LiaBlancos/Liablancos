@@ -190,3 +190,35 @@ export interface FinanceUploadLog {
     error_message: string | null
     created_at: string
 }
+
+export type RawMaterial = {
+    id: string
+    name: string
+    unit: 'metre' | 'kg' | 'adet'
+    unit_price: number
+    currency: 'TRY' | 'USD'
+    price_unit: 'metre' | 'cm' | 'kg' | 'gr' | 'adet'
+    description: string | null
+    is_active: boolean
+    created_at: string
+}
+
+export type ProductMaterial = {
+    id: string
+    product_id: string
+    material_id: string
+    quantity_per_unit: number
+    unit_price: number | null
+    currency: 'TRY' | 'USD' | null
+    price_unit: 'metre' | 'cm' | 'kg' | 'gr' | 'adet' | null
+    unit: 'metre' | 'cm' | 'kg' | 'gr' | 'adet'
+    created_at: string
+    material?: RawMaterial
+}
+
+export type ManufacturingCatalogEntry = {
+    id: string
+    product_id: string
+    created_at: string
+    product?: Product
+}

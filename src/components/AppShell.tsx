@@ -105,6 +105,7 @@ export default function AppShell({ children }: AppShellProps) {
     const productNavigation = [
         { name: 'Ürün Ayarları', href: '/product-settings', icon: Settings },
         { name: 'Toptancılar', href: '/urun-islemleri/toptancilar', icon: Truck },
+        { name: 'İmalat Hesaplama', href: '/urun-islemleri/imalat-hesaplama', icon: Calculator },
     ]
 
     const calculationNavigation = [

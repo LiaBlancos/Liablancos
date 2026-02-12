@@ -1,7 +1,7 @@
 'use server'
 
 import { supabase } from './supabase'
-import { Product, Shelf, InventoryLog, FinanceOrder, FinancePaymentRow, ImportResult, FinanceUploadLog } from '@/types'
+import { Product, Shelf, InventoryLog, FinanceOrder, FinancePaymentRow, ImportResult, FinanceUploadLog, RawMaterial, ProductMaterial, ManufacturingCatalogEntry } from '@/types'
 import { revalidatePath } from 'next/cache'
 import * as XLSX from 'xlsx'
 
@@ -2056,4 +2056,188 @@ export async function getFinanceOrderDetails(orderNumber: string, packageNo?: st
         return []
     }
     return data as FinancePaymentRow[]
+}
+
+// ------ MANUFACTURING (BILL OF MATERIALS) ACTIONS ------
+
+export async function getRawMaterials() {
+    const { data, error } = await supabase
+        .from('raw_materials')
+        .select('*')
+        .order('name', { ascending: true })
+
+    if (error) {
+        console.error('Error fetching raw materials:', error)
+        return []
+    }
+    return data as RawMaterial[]
+}
+
+export async function createRawMaterial(data: Partial<RawMaterial>) {
+    if (!data.price_unit) data.price_unit = data.unit as any
+    const { data: material, error } = await supabase
+        .from('raw_materials')
+        .insert([data])
+        .select()
+        .single()
+
+    if (error) {
+        console.error('Error creating raw material:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/imalat-hesaplama')
+    return { success: true, material: material }
+}
+
+export async function updateRawMaterial(id: string, data: Partial<RawMaterial>) {
+    const { error } = await supabase
+        .from('raw_materials')
+        .update(data)
+        .eq('id', id)
+
+    if (error) {
+        console.error('Error updating raw material:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/imalat-hesaplama')
+    return { success: true }
+}
+
+export async function deleteRawMaterial(id: string) {
+    const { error } = await supabase
+        .from('raw_materials')
+        .delete()
+        .eq('id', id)
+
+    if (error) {
+        console.error('Error deleting raw material:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/imalat-hesaplama')
+    return { success: true }
+}
+
+export async function getProductMaterials(productId: string) {
+    const { data, error } = await supabase
+        .from('product_materials')
+        .select('*, material:raw_materials(*)')
+        .eq('product_id', productId)
+
+    if (error) {
+        console.error('Error fetching product materials:', error)
+        return []
+    }
+    return data as ProductMaterial[]
+}
+
+export async function addProductMaterial(data: {
+    product_id: string,
+    material_id: string,
+    quantity_per_unit: number,
+    unit: string,
+    unit_price?: number,
+    currency?: 'TRY' | 'USD',
+    price_unit?: string
+}) {
+    const { data: newMaterial, error } = await supabase
+        .from('product_materials')
+        .upsert(data, { onConflict: 'product_id,material_id' })
+        .select()
+        .single()
+
+    if (error) {
+        console.error('Error adding product material:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/imalat-hesaplama')
+    return { success: true, data: newMaterial }
+}
+
+export async function updateProductMaterial(id: string, data: { quantity_per_unit?: number, unit_price?: number | null, currency?: 'TRY' | 'USD' | null, unit?: string, price_unit?: string | null }) {
+    const { error } = await supabase
+        .from('product_materials')
+        .update(data)
+        .eq('id', id)
+
+    if (error) {
+        console.error('Error updating product material quantity:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/imalat-hesaplama')
+    return { success: true }
+}
+
+export async function removeProductMaterial(id: string) {
+    const { error } = await supabase
+        .from('product_materials')
+        .delete()
+        .eq('id', id)
+
+    if (error) {
+        console.error('Error removing product material:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/imalat-hesaplama')
+    return { success: true }
+}
+
+// ------ MANUFACTURING CATALOG ACTIONS ------
+
+export async function getManufacturingCatalog() {
+    const { data, error } = await supabase
+        .from('manufacturing_catalog')
+        .select('*, product:products(*)')
+        .order('created_at', { ascending: false })
+
+    if (error) {
+        console.error('Error fetching manufacturing catalog:', error)
+        return []
+    }
+    return data as ManufacturingCatalogEntry[]
+}
+
+export async function addToManufacturingCatalog(productId: string) {
+    const { error } = await supabase
+        .from('manufacturing_catalog')
+        .upsert({ product_id: productId }, { onConflict: 'product_id' })
+
+    if (error) {
+        console.error('Error adding to manufacturing catalog:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/imalat-hesaplama')
+    return { success: true }
+}
+
+export async function removeFromManufacturingCatalog(id: string) {
+    const { error } = await supabase
+        .from('manufacturing_catalog')
+        .delete()
+        .eq('id', id)
+
+    if (error) {
+        console.error('Error removing from manufacturing catalog:', error)
+        return { error: error.message }
+    }
+
+    revalidatePath('/urun-islemleri/imalat-hesaplama')
+    return { success: true }
+}
+
+export async function getUSDExchangeRate() {
+    try {
+        const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD')
+        const data = await res.json()
+        return data.rates.TRY || 34.50 // Fallback to a reasonable value if API fails
+    } catch (error) {
+        console.error('Error fetching exchange rate:', error)
+        return 34.50 // Common fallback
+    }
 }
