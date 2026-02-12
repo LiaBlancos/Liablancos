@@ -18,6 +18,7 @@ import {
     Package
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { calculatePriceFromTarget } from '@/lib/calculation-utils'
 
 // Move sub-components and helpers outside to avoid re-creation on every render
 const formatCurrency = (val: number) => {
@@ -75,90 +76,33 @@ export default function ProfitCalculator() {
     const [isCalculated, setIsCalculated] = useState(false)
 
     const handleCalculate = () => {
-        const commRatio = commission / 100
-
-        // Fixed VAT Rates as per user request
-        const saleVatVal = 0.10
-        const saleVatFactor = 1 + saleVatVal
-
-        const costVatVal = 0.10
-        const costVatFactor = 1 + costVatVal
-
-        const shippingVatVal = 0.20
-        const shippingVatFactor = 1 + shippingVatVal
-
-        const commVatVal = 0.20
-        const commVatFactor = 1 + commVatVal
-
-        // Service Fees (Marketplace fees usually include 20% VAT)
-        const platformServiceFeeVal = 10.19
-        const intlServiceFeeVal = isMicroExport ? 47.71 : 0
-        const feeVatVal = 0.20
-        const feeVatFactor = 1 + feeVatVal
-
-        // Excluded Values
-        const costExcl = cost / costVatFactor
-        const shippingExcl = shipping / shippingVatFactor
-        const platformFeeExcl = platformServiceFeeVal / feeVatFactor
-        const intlFeeExcl = intlServiceFeeVal / feeVatFactor
-
-        let calculatedPriceIncl = 0
-        // PriceIncl = (PriceExcl * SaleVatFactor)
-        // Profit = PriceExcl - CostExcl - ShippingExcl - (PriceExcl * CommRatio / CommVatFactor?? No) 
-        // Note: Marketplace commission is calculated on INCLUSIVE price but is a cost for us.
-        // CommissionAmount = PriceIncl * CommRatio
-        // CommExcl = CommissionAmount / CommVatFactor
-
-        const stopajRatio = 0.01 // 1% Stopaj
-
-        if (profitMode === 'amount') {
-            // Formula: SaleExcl - CostExcl - ShippingExcl - (SaleExcl * SaleVatFactor * CommRatio / CommVatFactor) - FeesExcl - (SaleExcl * StopajRatio) = TargetProfit
-            // SaleExcl * (1 - (SaleVatFactor * CommRatio / CommVatFactor) - StopajRatio) = TargetProfit + CostExcl + ShippingExcl + FeesExcl
-            const denominator = 1 - (saleVatFactor * commRatio / commVatFactor) - stopajRatio
-            const numerator = targetProfit + costExcl + shippingExcl + platformFeeExcl + intlFeeExcl
-            const saleExcl = denominator > 0 ? numerator / denominator : 0
-            calculatedPriceIncl = saleExcl * saleVatFactor
-        } else {
-            // Formula: SaleExcl * (1 - (SaleVatFactor * CommRatio / CommVatFactor) - StopajRatio - ProfitRatio) = CostExcl + ShippingExcl + FeesExcl
-            const profitRatio = targetProfit / 100
-            const denominator = 1 - (saleVatFactor * commRatio / commVatFactor) - stopajRatio - profitRatio
-            const numerator = costExcl + shippingExcl + platformFeeExcl + intlFeeExcl
-            const saleExcl = denominator > 0 ? numerator / denominator : 0
-            calculatedPriceIncl = saleExcl * saleVatFactor
-        }
-
-        const saleExcl = calculatedPriceIncl / saleVatFactor
-        const stopajAmount = saleExcl * stopajRatio
-        const commAmount = calculatedPriceIncl * commRatio
-        const commExcl = commAmount / commVatFactor
-
-        const netProfit = saleExcl - costExcl - shippingExcl - commExcl - platformFeeExcl - intlFeeExcl - stopajAmount
-
-        // VAT Components
-        const saleVat = calculatedPriceIncl - saleExcl
-        const costVat = cost - costExcl
-        const shippingVat = shipping - shippingExcl
-        const commVat = commAmount - commExcl
-        const platformFeeVat = platformServiceFeeVal - platformFeeExcl
-        const intlFeeVat = intlServiceFeeVal - intlFeeExcl
-        const netVat = saleVat - (costVat + shippingVat + commVat + platformFeeVat + intlFeeVat)
+        const result = calculatePriceFromTarget(
+            targetProfit,
+            profitMode,
+            cost,
+            shipping,
+            commission,
+            10, // costVatRate
+            10, // saleVatRate
+            isMicroExport
+        )
 
         setBreakdown({
-            salePrice: calculatedPriceIncl,
-            costVat,
-            shippingVat,
-            commissionVat: commVat,
-            serviceFeeVat: platformFeeVat,
-            intlServiceFeeVat: intlFeeVat,
-            saleVat,
-            netVat,
-            commissionAmount: commAmount,
-            serviceFeeAmount: platformServiceFeeVal,
-            intlServiceFeeAmount: intlServiceFeeVal,
-            stopajAmount,
-            netProfit,
-            roi: costExcl > 0 ? (netProfit / costExcl) * 100 : 0,
-            margin: saleExcl > 0 ? (netProfit / saleExcl) * 100 : 0
+            salePrice: result.salePrice,
+            costVat: result.breakdown.costVat,
+            shippingVat: result.breakdown.shippingVat,
+            commissionVat: result.breakdown.commVat,
+            saleVat: result.breakdown.saleVat,
+            netVat: result.breakdown.netVat,
+            commissionAmount: result.commissionAmount,
+            serviceFeeAmount: 10.19,
+            intlServiceFeeAmount: isMicroExport ? 47.71 : 0,
+            serviceFeeVat: result.breakdown.feesExcl * 0.20, // Approximate for UI
+            intlServiceFeeVat: 0, // Breakdown in UI for this is simplified
+            stopajAmount: result.breakdown.stopajAmount,
+            netProfit: result.netProfit,
+            roi: result.roi,
+            margin: result.margin
         })
         setIsCalculated(true)
     }

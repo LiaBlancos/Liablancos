@@ -377,6 +377,9 @@ export async function syncTrendyolProducts() {
                 ? (typeof p.images[0] === 'string' ? p.images[0] : (p.images[0].url || null))
                 : null,
             quantity: p.quantity,
+            sale_price: p.salePrice || 0,
+            desi: p.dimensionalWeight || 0,
+            model_id: p.modelId ? p.modelId.toString() : null,
             is_active: p.onSale,
             updated_at: new Date().toISOString()
         }))
@@ -398,6 +401,140 @@ export async function syncTrendyolProducts() {
         return { error: error.message || 'Senkronizasyon sırasında bir hata oluştu.' }
     }
 }
+
+/**
+ * Fetch Trendyol sale prices for given barcodes
+ * Uses cached prices (fresh within 24 hours) to minimize API calls
+ * Returns a map of barcode -> sale price
+ */
+export async function fetchTrendyolPricesByBarcodes(barcodes: string[]) {
+    if (!barcodes || barcodes.length === 0) {
+        return { success: true, prices: {} }
+    }
+
+    try {
+        // 1. Check cache for existing prices (fresh within last 24 hours)
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        const { data: cachedPrices, error: cacheError } = await supabase
+            .from('trendyol_product_prices')
+            .select('barcode, sale_price')
+            .in('barcode', barcodes)
+            .gte('last_fetched_at', twentyFourHoursAgo)
+
+        if (cacheError) {
+            console.error('Cache fetch error:', cacheError)
+        }
+
+        // Build price map from cache
+        const priceMap: Record<string, number> = {}
+        const cachedBarcodes = new Set<string>()
+
+        if (cachedPrices && cachedPrices.length > 0) {
+            cachedPrices.forEach(item => {
+                priceMap[item.barcode] = item.sale_price
+                cachedBarcodes.add(item.barcode)
+            })
+        }
+
+        // 2. Determine which barcodes need API fetch (missing or stale)
+        const barcodesToFetch = barcodes.filter(b => !cachedBarcodes.has(b))
+
+        if (barcodesToFetch.length === 0) {
+            // All prices are cached and fresh
+            return { success: true, prices: priceMap }
+        }
+
+        // 3. Get API credentials
+        const settings = await getSettings()
+        const sellerId = settings.find(s => s.key === 'trendyol_seller_id')?.value
+        const apiKey = settings.find(s => s.key === 'trendyol_api_key')?.value
+        const apiSecret = settings.find(s => s.key === 'trendyol_api_secret')?.value
+
+        if (!sellerId || !apiKey || !apiSecret) {
+            console.warn('Trendyol API credentials missing, returning cached prices only')
+            return { success: true, prices: priceMap, warning: 'API kimlik bilgileri eksik' }
+        }
+
+        const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
+
+        // 4. Fetch prices from API (batch processing)
+        const fetchedPrices: Array<{ barcode: string, sale_price: number, product_name?: string, trendyol_product_id?: string }> = []
+
+        for (const barcode of barcodesToFetch) {
+            try {
+                // Use products endpoint with barcode filter
+                const url = `https://api.trendyol.com/integration/product/sellers/${sellerId}/products?barcode=${encodeURIComponent(barcode)}&size=1`
+
+                console.log(`[Trendyol Price API] Fetching price for barcode: ${barcode}`)
+
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Basic ${auth}`,
+                        'User-Agent': `${sellerId} - SelfIntegration`
+                    }
+                })
+
+                if (!response.ok) {
+                    const errorText = await response.text()
+                    console.error(`API error for barcode ${barcode}: ${response.status}`, errorText)
+                    continue
+                }
+
+                const data = await response.json()
+                console.log(`[Trendyol Price API] Response for ${barcode}:`, data)
+
+                if (data.content && data.content.length > 0) {
+                    const product = data.content[0]
+                    fetchedPrices.push({
+                        barcode: barcode,
+                        sale_price: product.salePrice || 0,
+                        product_name: product.title,
+                        trendyol_product_id: product.id
+                    })
+                    priceMap[barcode] = product.salePrice || 0
+                    console.log(`[Trendyol Price API] Found price for ${barcode}: ${product.salePrice}₺`)
+                } else {
+                    console.warn(`[Trendyol Price API] No product found for barcode: ${barcode}`)
+                }
+
+                // Add small delay to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, 100))
+            } catch (error) {
+                console.error(`Error fetching price for barcode ${barcode}:`, error)
+            }
+        }
+
+        // 5. Update cache with new prices
+        if (fetchedPrices.length > 0) {
+            const upsertData = fetchedPrices.map(p => ({
+                barcode: p.barcode,
+                sale_price: p.sale_price,
+                product_name: p.product_name,
+                trendyol_product_id: p.trendyol_product_id,
+                last_fetched_at: new Date().toISOString()
+            }))
+
+            const { error: upsertError } = await supabase
+                .from('trendyol_product_prices')
+                .upsert(upsertData, { onConflict: 'barcode' })
+
+            if (upsertError) {
+                console.error('Error updating price cache:', upsertError)
+            }
+        }
+
+        return {
+            success: true,
+            prices: priceMap,
+            fetched: fetchedPrices.length,
+            cached: cachedBarcodes.size
+        }
+    } catch (error: any) {
+        console.error('fetchTrendyolPricesByBarcodes error:', error)
+        return { error: error.message || 'Fiyatlar çekilemedi.' }
+    }
+}
+
 
 // --- WHOLESALERS MANAGEMENT ---
 
@@ -691,6 +828,30 @@ export async function updateProductMinStock(productId: string, minStock: number)
     } catch (error: any) {
         console.error('Update min stock error:', error)
         return { error: error.message || 'Kritik limit güncellenemedi.' }
+    }
+}
+
+export async function updateProductSettings(productId: string, data: Partial<Product>) {
+    try {
+        const { error } = await supabase
+            .from('products')
+            .update({
+                ...data,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', productId)
+
+        if (error) throw new Error(error.message)
+
+        revalidatePath('/inventory')
+        revalidatePath('/product-settings')
+        revalidatePath('/campaigns/commission-tariffs')
+        revalidatePath('/')
+
+        return { success: true }
+    } catch (error: any) {
+        console.error('Update product settings error:', error)
+        return { error: error.message || 'Ürün ayarları güncellenemedi.' }
     }
 }
 export async function getTrendyolOrders(

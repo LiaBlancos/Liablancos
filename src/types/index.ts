@@ -24,7 +24,18 @@ export type Product = {
     shelf_id: string | null
     category_id: string | null
     image_url: string | null
+    desi: number
+    sale_price: number
+    model_id: string | null
+    brand_name?: string | null
+    color?: string | null
+    size?: string | null
+    cost?: number | null
+    cost_vat_rate?: number | null
+    return_rate?: number | null
+    is_shipped_today?: boolean
     is_active: boolean
+    target_profit_margin?: number | null
     created_at: string
     updated_at: string
     shelves?: Shelf | null // Joined

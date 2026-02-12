@@ -28,7 +28,8 @@ import {
     RotateCcw,
     Calculator,
     Wallet,
-    LogOut
+    LogOut,
+    Percent
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEffect } from 'react'
@@ -53,6 +54,7 @@ export default function AppShell({ children }: AppShellProps) {
     const [isShippingOpen, setIsShippingOpen] = useState(false)
     const [isCalcOpen, setIsCalcOpen] = useState(false)
     const [isProductOpen, setIsProductOpen] = useState(false)
+    const [isCampaignsOpen, setIsCampaignsOpen] = useState(false)
     const [isFinanceOpen, setIsFinanceOpen] = useState(false)
 
     useEffect(() => {
@@ -65,8 +67,11 @@ export default function AppShell({ children }: AppShellProps) {
         if (pathname.startsWith('/calculator')) {
             setIsCalcOpen(true)
         }
-        if (pathname.startsWith('/urun-islemleri')) {
+        if (pathname.startsWith('/urun-islemleri') || pathname === '/product-settings') {
             setIsProductOpen(true)
+        }
+        if (pathname.startsWith('/campaigns')) {
+            setIsCampaignsOpen(true)
         }
         if (pathname.startsWith('/finans')) {
             setIsFinanceOpen(true)
@@ -98,11 +103,16 @@ export default function AppShell({ children }: AppShellProps) {
     ]
 
     const productNavigation = [
+        { name: 'Ürün Ayarları', href: '/product-settings', icon: Settings },
         { name: 'Toptancılar', href: '/urun-islemleri/toptancilar', icon: Truck },
     ]
 
     const calculationNavigation = [
         { name: 'Kâr Hesaplayıcı', href: '/calculator/profit', icon: Calculator },
+    ]
+
+    const campaignsNavigation = [
+        { name: 'Komisyon Tarifeleri', href: '/campaigns/commission-tariffs', icon: Percent },
     ]
 
     const financeNavigation = [
@@ -276,6 +286,41 @@ export default function AppShell({ children }: AppShellProps) {
                         )}>
                             <div className="overflow-hidden space-y-1">
                                 {calculationNavigation.map((item) => <NavLink key={item.name} item={item} isSubItem />)}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Collapsible Campaigns Menu */}
+                    <div className="pt-2">
+                        <button
+                            onClick={() => setIsCampaignsOpen(!isCampaignsOpen)}
+                            className={cn(
+                                "group flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200",
+                                pathname.startsWith('/campaigns') ? "text-white bg-white/5" : "text-slate-400 hover:text-white hover:bg-white/5"
+                            )}
+                        >
+                            <div className="flex items-center gap-3">
+                                <Percent className={cn(
+                                    "w-5 h-5",
+                                    pathname.startsWith('/campaigns') ? "text-indigo-400" : "text-slate-400 group-hover:text-white"
+                                )} />
+                                <span className={cn(
+                                    "font-bold uppercase tracking-wider text-[11px]",
+                                    pathname.startsWith('/campaigns') ? "text-white" : "text-slate-400 group-hover:text-white"
+                                )}>Kampanyalar</span>
+                            </div>
+                            <ChevronDown className={cn(
+                                "w-4 h-4 transition-transform duration-300 opacity-50",
+                                isCampaignsOpen ? "rotate-0" : "-rotate-90"
+                            )} />
+                        </button>
+
+                        <div className={cn(
+                            "grid transition-all duration-300 ease-in-out",
+                            isCampaignsOpen ? "grid-rows-[1fr] opacity-100 mt-1" : "grid-rows-[0fr] opacity-0 overflow-hidden"
+                        )}>
+                            <div className="overflow-hidden space-y-1">
+                                {campaignsNavigation.map((item) => <NavLink key={item.name} item={item} isSubItem />)}
                             </div>
                         </div>
                     </div>
@@ -552,6 +597,50 @@ export default function AppShell({ children }: AppShellProps) {
                             )}>
                                 <div className="overflow-hidden space-y-2">
                                     {calculationNavigation.map((item) => (
+                                        <Link
+                                            key={item.name}
+                                            href={item.href}
+                                            onClick={() => setIsMobileMenuOpen(false)}
+                                            className={cn(
+                                                "flex items-center gap-4 ml-8 px-6 py-4 rounded-2xl transition-all",
+                                                pathname === item.href
+                                                    ? "bg-white/10 text-white"
+                                                    : "text-slate-400 hover:bg-white/5"
+                                            )}
+                                        >
+                                            <item.icon className="w-5 h-5" />
+                                            <span className="font-medium">{item.name}</span>
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Mobile Campaigns Group */}
+                        <div className="pt-2">
+                            <button
+                                onClick={() => setIsCampaignsOpen(!isCampaignsOpen)}
+                                className={cn(
+                                    "flex items-center justify-between w-full px-6 py-4 rounded-2xl transition-all",
+                                    pathname.startsWith('/campaigns') ? "text-white" : "text-slate-400"
+                                )}
+                            >
+                                <div className="flex items-center gap-4">
+                                    <Percent className="w-6 h-6" />
+                                    <span className="font-black uppercase tracking-widest text-sm">Kampanyalar</span>
+                                </div>
+                                <ChevronDown className={cn(
+                                    "w-5 h-5 transition-transform duration-300",
+                                    isCampaignsOpen ? "rotate-0" : "-rotate-90"
+                                )} />
+                            </button>
+
+                            <div className={cn(
+                                "grid transition-all duration-300 ease-in-out",
+                                isCampaignsOpen ? "grid-rows-[1fr] opacity-100 mt-2" : "grid-rows-[0fr] opacity-0 overflow-hidden"
+                            )}>
+                                <div className="overflow-hidden space-y-2">
+                                    {campaignsNavigation.map((item) => (
                                         <Link
                                             key={item.name}
                                             href={item.href}
