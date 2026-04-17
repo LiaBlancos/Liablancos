@@ -2333,3 +2333,48 @@ export async function deleteExpense(id: string) {
     revalidatePath('/muhasebe/gider-kaydi')
     return { success: true }
 }
+
+// --- EXPENSE RULES (OTOMATIK KATEGORI) ---
+
+export async function getExpenseRules() {
+    const { data, error } = await supabase
+        .from('expense_rules')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+    if (error) {
+        console.error('Error fetching expense rules:', error)
+        return []
+    }
+
+    return data
+}
+
+export async function saveExpenseRule(keyword: string, category: string) {
+    const { data, error } = await supabase
+        .from('expense_rules')
+        .upsert([{ keyword, category }], { onConflict: 'keyword' })
+
+    if (error) {
+        console.error('Error saving expense rule:', error)
+        throw new Error(error.message)
+    }
+
+    revalidatePath('/ayarlar/kategori-ve-etiketler')
+    return { success: true }
+}
+
+export async function deleteExpenseRule(id: string) {
+    const { error } = await supabase
+        .from('expense_rules')
+        .delete()
+        .eq('id', id)
+
+    if (error) {
+        console.error('Error deleting expense rule:', error)
+        throw new Error(error.message)
+    }
+
+    revalidatePath('/ayarlar/kategori-ve-etiketler')
+    return { success: true }
+}
