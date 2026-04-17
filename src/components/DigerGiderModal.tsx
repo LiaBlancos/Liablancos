@@ -40,15 +40,16 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
     if (isOpen) {
       fetchRules()
       if (initialData) {
-      setFormData({
-        ...initialData,
-        toplamTutar: initialData.toplamTutar.toString().replace('.', ','),
-        toplamKdv: initialData.toplamKdv?.toString().replace('.', ',') || '0'
-      })
-      setView('form')
-    } else {
-      resetForm()
-      setView('selection')
+        setFormData({
+          ...initialData,
+          toplamTutar: initialData.toplamTutar.toString().replace('.', ','),
+          toplamKdv: initialData.toplamKdv?.toString().replace('.', ',') || '0'
+        })
+        setView('form')
+      } else {
+        resetForm()
+        setView('selection')
+      }
     }
   }, [initialData, isOpen])
 
