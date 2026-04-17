@@ -118,7 +118,10 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
             }
             
             if (cleanH === 'B/A') colMap['ba'] = idx
-            if (cleanH.includes('İŞLEM') || cleanH.includes('ISLEM')) colMap['islem'] = idx
+            if (cleanH.includes('İŞLEMNO') || cleanH.includes('ISLEMNO')) colMap['islemNo'] = idx
+            if (cleanH.includes('İŞLEM') || cleanH.includes('ISLEM')) {
+              if (!colMap['islem']) colMap['islem'] = idx
+            }
           }
         })
 
@@ -164,6 +167,7 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
             // Smart name extraction from description
             const description = row[colMap['aciklama']] || ''
             const transactionType = row[colMap['islem']] || ''
+            const islemNo = row[colMap['islemNo']]?.toString() || ''
             let extractedName = transactionType
             
             if (description) {
@@ -185,7 +189,8 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
               giderKategorisi: formData.giderKategorisi || 'Banka Giderleri',
               etiket: formData.etiket || 'Banka',
               toplamKdv: '0',
-              kdvOrani: 0
+              kdvOrani: 0,
+              islemNo: islemNo
             }
             
             await onSave(record)

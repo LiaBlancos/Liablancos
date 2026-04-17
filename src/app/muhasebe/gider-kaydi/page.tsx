@@ -28,6 +28,7 @@ interface GiderKaydi {
   dosya?: string | null
   lineItems?: any[]
   stokTakipli?: boolean
+  islemNo?: string
   createdAt: string
 }
 

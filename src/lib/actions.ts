@@ -2267,6 +2267,7 @@ export async function getExpenses() {
         dosya: item.dosya,
         lineItems: item.line_items,
         stokTakipli: item.stok_takipli,
+        islemNo: item.islem_no,
         createdAt: item.created_at
     }))
 }
@@ -2286,7 +2287,8 @@ export async function saveExpense(data: any) {
         fis_no: data.fisNo,
         dosya: data.dosya,
         line_items: data.lineItems || [],
-        stok_takipli: data.stokTakipli || false
+        stok_takipli: data.stokTakipli || false,
+        islem_no: data.islemNo
     }
 
     let result
@@ -2296,9 +2298,16 @@ export async function saveExpense(data: any) {
             .update(dbData)
             .eq('id', data.id)
     } else {
-        result = await supabase
-            .from('expenses')
-            .insert([dbData])
+        // If islemNo exists, use upsert to ignore duplicates
+        if (data.islemNo) {
+            result = await supabase
+                .from('expenses')
+                .upsert([dbData], { onConflict: 'islem_no', ignoreDuplicates: true })
+        } else {
+            result = await supabase
+                .from('expenses')
+                .insert([dbData])
+        }
     }
 
     if (result.error) {
