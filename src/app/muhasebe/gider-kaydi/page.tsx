@@ -72,9 +72,11 @@ export default function GiderKaydiPage() {
         setIsDetayliOpen(false)
         setIsDigerOpen(false)
         setEditingRecord(null)
+        return { success: true }
       }
     } catch (error: any) {
       toast.error('Hata: ' + error.message)
+      throw error // Hatayı fırlat ki Modal bunu anlasın
     }
   }
 
