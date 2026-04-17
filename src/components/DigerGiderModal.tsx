@@ -6,6 +6,7 @@ import { GIDER_KATEGORILERI, ETIKETLER } from '@/lib/constants'
 import { formatCurrency } from '@/lib/utils'
 import * as XLSX from 'xlsx'
 import { toast } from 'sonner'
+import { getExpenseRules } from '@/lib/actions'
 
 interface DigerGiderModalProps {
   isOpen: boolean
@@ -19,6 +20,7 @@ type ViewMode = 'selection' | 'form' | 'excel'
 export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }: DigerGiderModalProps) {
   const [view, setView] = useState<ViewMode>('selection')
   const [loading, setLoading] = useState(false)
+  const [rules, setRules] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   const [formData, setFormData] = useState({
@@ -35,7 +37,9 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
   })
 
   useEffect(() => {
-    if (initialData) {
+    if (isOpen) {
+      fetchRules()
+      if (initialData) {
       setFormData({
         ...initialData,
         toplamTutar: initialData.toplamTutar.toString().replace('.', ','),
@@ -61,6 +65,11 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
       toplamKdv: '0',
       kdvOrani: 0
     })
+  }
+
+  const fetchRules = async () => {
+    const data = await getExpenseRules()
+    setRules(data)
   }
 
   if (!isOpen) return null
@@ -179,6 +188,34 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
               }
             }
 
+            // Dynamic Category Mapping
+            let autoCategory = formData.giderKategorisi || 'DİĞER GİDERLER'
+            const searchStr = (extractedName + ' ' + description).toUpperCase()
+            
+            // 1. Check user-defined rules from settings
+            const matchingRule = rules.find(r => searchStr.includes(r.keyword.toUpperCase()))
+            if (matchingRule) {
+              autoCategory = matchingRule.category
+            } else {
+              // 2. Fallback to hardcoded defaults
+              if (searchStr.includes('REKLAM') || searchStr.includes('GOOGLE') || searchStr.includes('FACEBOOK') || searchStr.includes('META')) {
+                autoCategory = 'REKLAM GİDERİ'
+              } else if (searchStr.includes('TRENDYOL')) {
+                if (searchStr.includes('KOMİSYON')) autoCategory = 'TRENDYOL KOMİSYONU'
+                else autoCategory = 'PLATFORM HİZMET BEDELİ'
+              } else if (searchStr.includes('KARGO') || searchStr.includes('YURTİÇİ') || searchStr.includes('ARAS') || searchStr.includes('MNG')) {
+                autoCategory = 'KARGO GİDERİ'
+              } else if (searchStr.includes('MAAŞ') || searchStr.includes('MAAS') || searchStr.includes('PERSONEL') || searchStr.includes('SGK') || searchStr.includes('YEMEK')) {
+                autoCategory = 'ÇALIŞAN GİDERİ'
+              } else if (searchStr.includes('STOPAJ') || searchStr.includes('VERGİ') || searchStr.includes('VERGI')) {
+                autoCategory = 'E-TİCARET STOPAJI'
+              } else if (searchStr.includes('HİZMET') || searchStr.includes('HIZMET')) {
+                autoCategory = 'HİZMET BEDELİ'
+              } else if (searchStr.includes('MASRAF') || searchStr.includes('KOMİSYON') || searchStr.includes('TAHSİLAT')) {
+                autoCategory = 'MASRAF TAHSİLATI'
+              }
+            }
+
             const record = {
               kayitIsmi: extractedName || 'Banka Gideri',
               tedarikci: extractedName,
@@ -186,7 +223,7 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
               toplamTutar: cleanTutar.toString().replace('.', ','),
               doviz: 'TL',
               odemeDurumu: 'odendi',
-              giderKategorisi: formData.giderKategorisi || 'Banka Giderleri',
+              giderKategorisi: autoCategory,
               etiket: formData.etiket || 'Banka',
               toplamKdv: '0',
               kdvOrani: 0,
