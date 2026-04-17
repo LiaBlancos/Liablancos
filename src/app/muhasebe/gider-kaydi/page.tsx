@@ -253,7 +253,7 @@ export default function GiderKaydiPage() {
                   {/* Tarih + Tip */}
                   <div className="col-span-3">
                     <p className="text-sm text-slate-600">
-                      {new Date(record.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      {new Date(record.tarih).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
                     </p>
                     <p className="text-xs text-slate-400 mt-0.5">Fiş / Fatura</p>
                   </div>
