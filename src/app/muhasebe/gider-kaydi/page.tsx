@@ -8,14 +8,17 @@ import CategoryTag from '@/components/CategoryTag'
 import { GIDER_KATEGORILERI, ETIKETLER } from '@/lib/constants'
 import { formatCurrency } from '@/lib/utils'
 
+import { getExpenses, saveExpense, deleteExpense as apiDeleteExpense } from '@/lib/actions'
+import { toast } from 'sonner'
+
 interface GiderKaydi {
   id: string
   kayitIsmi: string
   tedarikci: string
   tarih: string
-  toplamTutar: string
+  toplamTutar: string | number
   doviz: string
-  toplamKdv: string
+  toplamKdv: string | number
   kdvOrani: number
   odemeDurumu: string
   giderKategorisi: string
@@ -33,39 +36,41 @@ export default function GiderKaydiPage() {
   const [isDetayliOpen, setIsDetayliOpen] = useState(false)
   const [records, setRecords] = useState<GiderKaydi[]>([])
   const [editingRecord, setEditingRecord] = useState<GiderKaydi | null>(null)
-  const [isLoaded, setIsLoaded] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  // Load from localStorage on mount
+  // Load from Supabase on mount
   React.useEffect(() => {
-    const saved = localStorage.getItem('wms_gider_kayitlari')
-    if (saved) {
-      try {
-        setRecords(JSON.parse(saved))
-      } catch (e) {
-        console.error('Error parsing saved records:', e)
-      }
-    }
-    setIsLoaded(true)
+    fetchExpenses()
   }, [])
 
-  // Save to localStorage whenever records change, but ONLY after initial load
-  React.useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('wms_gider_kayitlari', JSON.stringify(records))
+  const fetchExpenses = async () => {
+    setLoading(true)
+    try {
+      const data = await getExpenses()
+      setRecords(data)
+    } catch (error) {
+      console.error('Error fetching expenses:', error)
+      toast.error('Kayıtlar yüklenirken bir hata oluştu.')
+    } finally {
+      setLoading(false)
     }
-  }, [records, isLoaded])
+  }
 
-  const handleSave = (data: any) => {
-    if (editingRecord) {
-      setRecords(prev => prev.map(r => r.id === editingRecord.id ? { ...r, ...data } : r))
-      setEditingRecord(null)
-    } else {
-      const newRecord: GiderKaydi = {
-        id: Date.now().toString(),
+  const handleSave = async (data: any) => {
+    try {
+      const result = await saveExpense({
         ...data,
-        createdAt: new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }),
+        id: editingRecord?.id
+      })
+      if (result.success) {
+        toast.success(editingRecord ? 'Kayıt güncellendi' : 'Yeni kayıt eklendi')
+        fetchExpenses()
+        setIsHizliOpen(false)
+        setIsDetayliOpen(false)
+        setEditingRecord(null)
       }
-      setRecords(prev => [newRecord, ...prev])
+    } catch (error: any) {
+      toast.error('Hata: ' + error.message)
     }
   }
 
@@ -78,8 +83,18 @@ export default function GiderKaydiPage() {
     }
   }
 
-  const handleDelete = (id: string) => {
-    setRecords(prev => prev.filter(r => r.id !== id))
+  const handleDelete = async (id: string) => {
+    if (confirm('Bu kaydı silmek istediğinize emin misiniz?')) {
+      try {
+        const result = await apiDeleteExpense(id)
+        if (result.success) {
+          toast.success('Kayıt silindi')
+          fetchExpenses()
+        }
+      } catch (error: any) {
+        toast.error('Silme hatası: ' + error.message)
+      }
+    }
   }
 
   const filteredRecords = records.filter(r =>
@@ -153,7 +168,12 @@ export default function GiderKaydiPage() {
       </div>
 
       {/* Records List or Empty State */}
-      {filteredRecords.length === 0 && searchQuery === '' && records.length === 0 ? (
+      {loading ? (
+        <div className="bg-white rounded-3xl border border-slate-200/60 p-8 shadow-sm flex flex-col items-center justify-center py-20">
+          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-slate-500 font-medium">Kayıtlar yükleniyor...</p>
+        </div>
+      ) : filteredRecords.length === 0 && searchQuery === '' && records.length === 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200/60 p-8 shadow-sm">
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <div className="w-20 h-20 rounded-full bg-slate-50 flex items-center justify-center mb-4">
@@ -221,7 +241,9 @@ export default function GiderKaydiPage() {
 
                   {/* Tarih + Tip */}
                   <div className="col-span-3">
-                    <p className="text-sm text-slate-600">{record.createdAt}</p>
+                    <p className="text-sm text-slate-600">
+                      {new Date(record.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </p>
                     <p className="text-xs text-slate-400 mt-0.5">Fiş / Fatura</p>
                   </div>
 

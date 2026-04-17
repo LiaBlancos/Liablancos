@@ -882,14 +882,10 @@ export async function getTrendyolOrders(
         if (endDate) url += `&endDate=${endDate}`
 
         if (status) {
-            if (Array.isArray(status)) {
-                // If multiple statuses, append each one
-                status.forEach(s => {
-                    url += `&status=${s}`
-                })
-            } else {
-                url += `&status=${status}`
-            }
+            const statusArray = Array.isArray(status) ? status : [status]
+            statusArray.forEach(s => {
+                url += `&status=${s}`
+            })
         }
 
 
@@ -2240,4 +2236,91 @@ export async function getUSDExchangeRate() {
         console.error('Error fetching exchange rate:', error)
         return 34.50 // Common fallback
     }
+}
+// --- EXPENSES (GIDERLER) MANAGEMENT ---
+
+export async function getExpenses() {
+    const { data, error } = await supabase
+        .from('expenses')
+        .select('*')
+        .order('tarih', { ascending: false })
+
+    if (error) {
+        console.error('Error fetching expenses:', error)
+        return []
+    }
+
+    // Map database snake_case to frontend camelCase
+    return data.map((item: any) => ({
+        id: item.id,
+        kayitIsmi: item.kayit_ismi,
+        tedarikci: item.tedarikci,
+        tarih: item.tarih,
+        toplamTutar: item.toplam_tutar,
+        doviz: item.doviz,
+        toplamKdv: item.toplam_kdv,
+        kdvOrani: item.kdv_orani,
+        odemeDurumu: item.odeme_durumu,
+        giderKategorisi: item.gider_kategorisi,
+        etiket: item.etiket,
+        fisNo: item.fis_no,
+        dosya: item.dosya,
+        lineItems: item.line_items,
+        stokTakipli: item.stok_takipli,
+        createdAt: item.created_at
+    }))
+}
+
+export async function saveExpense(data: any) {
+    const dbData = {
+        kayit_ismi: data.kayitIsmi,
+        tedarikci: data.tedarikci,
+        tarih: data.tarih,
+        toplam_tutar: typeof data.toplamTutar === 'string' ? parseFloat(data.toplamTutar.replace(/\./g, '').replace(',', '.')) : data.toplamTutar,
+        doviz: data.doviz || 'TL',
+        toplam_kdv: typeof data.toplamKdv === 'string' ? parseFloat(data.toplamKdv.replace(/\./g, '').replace(',', '.')) : data.toplamKdv,
+        kdv_orani: data.kdvOrani,
+        odeme_durumu: data.odemeDurumu,
+        gider_kategorisi: data.giderKategorisi,
+        etiket: data.etiket,
+        fis_no: data.fisNo,
+        dosya: data.dosya,
+        line_items: data.lineItems || [],
+        stok_takipli: data.stokTakipli || false
+    }
+
+    let result
+    if (data.id && data.id.length > 15) { // Assuming generated UUIDs are long
+        result = await supabase
+            .from('expenses')
+            .update(dbData)
+            .eq('id', data.id)
+    } else {
+        result = await supabase
+            .from('expenses')
+            .insert([dbData])
+    }
+
+    if (result.error) {
+        console.error('Error saving expense:', result.error)
+        throw new Error(result.error.message)
+    }
+
+    revalidatePath('/muhasebe/gider-kaydi')
+    return { success: true }
+}
+
+export async function deleteExpense(id: string) {
+    const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', id)
+
+    if (error) {
+        console.error('Error deleting expense:', error)
+        throw new Error(error.message)
+    }
+
+    revalidatePath('/muhasebe/gider-kaydi')
+    return { success: true }
 }
