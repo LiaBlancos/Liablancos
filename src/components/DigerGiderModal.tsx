@@ -208,25 +208,9 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
             
             if (matchingRule) {
               autoCategory = matchingRule.category
-            } else {
-              // 2. Fallback to hardcoded defaults
-              if (searchStr.includes('reklam') || searchStr.includes('google') || searchStr.includes('facebook') || searchStr.includes('meta')) {
-                autoCategory = 'REKLAM GİDERİ'
-              } else if (searchStr.includes('trendyol')) {
-                if (searchStr.includes('komisyon')) autoCategory = 'TRENDYOL KOMİSYONU'
-                else autoCategory = 'PLATFORM HİZMET BEDELİ'
-              } else if (searchStr.includes('kargo') || searchStr.includes('yurtici') || searchStr.includes('aras') || searchStr.includes('mng')) {
-                autoCategory = 'KARGO GİDERİ'
-              } else if (searchStr.includes('maas') || searchStr.includes('personel') || searchStr.includes('sgk') || searchStr.includes('yemek')) {
-                autoCategory = 'ÇALIŞAN GİDERİ'
-              } else if (searchStr.includes('stopaj') || searchStr.includes('vergi')) {
-                autoCategory = 'E-TİCARET STOPAJI'
-              } else if (searchStr.includes('hizmet')) {
-                autoCategory = 'HİZMET BEDELİ'
-              } else if (searchStr.includes('masraf') || searchStr.includes('komisyon') || searchStr.includes('tahsilat')) {
-                autoCategory = 'MASRAF TAHSİLATI'
-              }
             }
+            // Artık varsayılan (hardcoded) eşleştirmeler kaldırıldı. 
+            // Sadece Ayarlar sayfasında tanımladıklarınız çalışır.
 
             const record = {
               kayitIsmi: extractedName || 'Banka Gideri',
