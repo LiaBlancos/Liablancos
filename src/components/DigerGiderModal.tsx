@@ -131,7 +131,7 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
             }
             
             // İşlem Tipi / İsmi (Tarih sütunu ile karışmaması için kontrol)
-            if ((cleanH === 'İŞLEM' || cleanH === 'ISLEM' || cleanH === 'İŞLEMTİPİ' || cleanH === 'ISLEMTIPI') && cleanH !== 'İŞLEMTARİHİ' && cleanH !== 'ISLEMTARIHI') {
+            if (cleanH === 'İŞLEM' || cleanH === 'ISLEM' || cleanH === 'İŞLEMTİPİ' || cleanH === 'ISLEMTIPI') {
               colMap['islem'] = idx
             }
             
