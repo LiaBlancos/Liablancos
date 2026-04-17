@@ -119,77 +119,84 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
 
         // Process each row
         let successCount = 0
+        let errorCount = 0
+        
         for (const row of rows) {
-          if (!row[colMap['tutar']] || !row[colMap['aciklama']]) continue
+          try {
+            if (!row[colMap['tutar']] || !row[colMap['aciklama']]) continue
 
-          const baValue = row[colMap['ba']]
-          const rawTutar = row[colMap['tutar']]
-          
-          // Filter: Only take "Borç (B)" transactions or negative values as expenses
-          // In some bank excels, negative values are expenses. 
-          // In VakıfBank, "B" indicates debt/expense.
-          const isExpense = (baValue === 'B') || (typeof rawTutar === 'number' && rawTutar < 0) || (typeof rawTutar === 'string' && rawTutar.includes('-'))
-          
-          if (!isExpense) continue
+            const baValue = row[colMap['ba']]
+            const rawTutar = row[colMap['tutar']]
+            
+            const isExpense = (baValue === 'B') || (typeof rawTutar === 'number' && rawTutar < 0) || (typeof rawTutar === 'string' && rawTutar.includes('-'))
+            if (!isExpense) continue
 
-          // Handle Turkish number formatting (1.500,00 -> 1500.00)
-          let cleanTutar = 0
-          if (typeof rawTutar === 'number') {
-            cleanTutar = Math.abs(rawTutar)
-          } else if (typeof rawTutar === 'string') {
-            cleanTutar = Math.abs(parseFloat(rawTutar.replace(/\./g, '').replace(',', '.')))
-          }
+            // Handle Turkish number formatting
+            let cleanTutar = 0
+            if (typeof rawTutar === 'number') {
+              cleanTutar = Math.abs(rawTutar)
+            } else if (typeof rawTutar === 'string') {
+              cleanTutar = Math.abs(parseFloat(rawTutar.replace(/\./g, '').replace(',', '.')))
+            }
 
-          // Handle Date
-          let cleanDate = new Date().toISOString().split('T')[0]
-          const rawDate = row[colMap['tarih']]
-          if (rawDate) {
-            if (typeof rawDate === 'number') {
-              // Excel serial date
-              const dateObj = XLSX.utils.format_cell({ v: rawDate, t: 'd' } as any)
-              cleanDate = new Date(dateObj).toISOString().split('T')[0]
-            } else if (typeof rawDate === 'string') {
-              // Support DD.MM.YYYY
-              const parts = rawDate.split('.')
-              if (parts.length === 3) {
-                cleanDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+            // Robust Date Parsing
+            let cleanDate = new Date().toISOString().split('T')[0]
+            const rawDate = row[colMap['tarih']]
+            if (rawDate) {
+              if (typeof rawDate === 'number') {
+                const dateObj = XLSX.utils.format_cell({ v: rawDate, t: 'd' } as any)
+                cleanDate = new Date(dateObj).toISOString().split('T')[0]
+              } else if (typeof rawDate === 'string') {
+                // Handle "DD.MM.YYYY HH:mm" or "DD.MM.YYYY"
+                const datePart = rawDate.split(' ')[0]
+                const parts = datePart.split('.')
+                if (parts.length === 3) {
+                  // Ensure year is only 4 digits (handle 2026 17:54 case)
+                  const year = parts[2].trim().substring(0, 4)
+                  cleanDate = `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+                }
               }
             }
-          }
 
-          // Smart name extraction from description
-          let extractedSupplier = row[colMap['islem']] || ''
-          const description = row[colMap['aciklama']] || ''
-          
-          if (description) {
-            // Pattern: "... [Bank Name] [Target Name] hesabına giden..."
-            // Pattern: "... [Target Name] adına yapılan..."
-            const nameMatch = description.match(/(?:hesabından|Bank\s+A\.Ş\.|Bankası|Bank)\s+(.*?)\s+hesabına/i) || 
-                             description.match(/(.*?)\s+adına\s+yapılan/i)
+            // Smart name extraction from description
+            let extractedSupplier = row[colMap['islem']] || ''
+            const description = row[colMap['aciklama']] || ''
             
-            if (nameMatch && nameMatch[1]) {
-              extractedSupplier = nameMatch[1].trim().toUpperCase()
-              // Remove common noise like "A.S.", "LTD. STI." etc if needed, but keeping for now for accuracy
+            if (description) {
+              const nameMatch = description.match(/(?:hesabından|Bank\s+A\.Ş\.|Bankası|Bank)\s+(.*?)\s+hesabına/i) || 
+                               description.match(/(.*?)\s+adına\s+yapılan/i)
+              
+              if (nameMatch && nameMatch[1]) {
+                extractedSupplier = nameMatch[1].trim().toUpperCase()
+              }
             }
-          }
 
-          const record = {
-            kayitIsmi: description || 'Banka Gideri',
-            tedarikci: extractedSupplier,
-            tarih: cleanDate,
-            toplamTutar: cleanTutar.toString().replace('.', ','),
-            doviz: 'TL',
-            odemeDurumu: 'odendi',
-            giderKategorisi: formData.giderKategorisi || 'Banka Giderleri',
-            etiket: formData.etiket || 'Banka',
-            toplamKdv: '0',
-            kdvOrani: 0
+            const record = {
+              kayitIsmi: description || 'Banka Gideri',
+              tedarikci: extractedSupplier,
+              tarih: cleanDate,
+              toplamTutar: cleanTutar.toString().replace('.', ','),
+              doviz: 'TL',
+              odemeDurumu: 'odendi',
+              giderKategorisi: formData.giderKategorisi || 'Banka Giderleri',
+              etiket: formData.etiket || 'Banka',
+              toplamKdv: '0',
+              kdvOrani: 0
+            }
+            
+            await onSave(record)
+            successCount++
+          } catch (err) {
+            console.error('Row save error:', err)
+            errorCount++
           }
-          
-          await onSave(record)
-          successCount++
         }
-        toast.success(`${successCount} adet gider başarıyla aktarıldı.`)
+
+        if (errorCount > 0) {
+          toast.warning(`${successCount} adet başarıyla eklendi, ${errorCount} adet hata oluştu.`)
+        } else {
+          toast.success(`${successCount} adet gider başarıyla aktarıldı.`)
+        }
         onClose()
       } catch (err) {
         console.error('Excel parse error:', err)
