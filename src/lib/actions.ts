@@ -2298,8 +2298,8 @@ export async function saveExpense(data: any) {
             .update(dbData)
             .eq('id', data.id)
     } else {
-        // If islemNo exists, use upsert to ignore duplicates
-        if (data.islemNo) {
+        // If islemNo exists and is not empty, use upsert to ignore duplicates
+        if (data.islemNo && data.islemNo.trim() !== '') {
             result = await supabase
                 .from('expenses')
                 .upsert([dbData], { onConflict: 'islem_no', ignoreDuplicates: true })
