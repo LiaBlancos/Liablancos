@@ -157,9 +157,25 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
             }
           }
 
+          // Smart name extraction from description
+          let extractedSupplier = row[colMap['islem']] || ''
+          const description = row[colMap['aciklama']] || ''
+          
+          if (description) {
+            // Pattern: "... [Bank Name] [Target Name] hesabına giden..."
+            // Pattern: "... [Target Name] adına yapılan..."
+            const nameMatch = description.match(/(?:hesabından|Bank\s+A\.Ş\.|Bankası|Bank)\s+(.*?)\s+hesabına/i) || 
+                             description.match(/(.*?)\s+adına\s+yapılan/i)
+            
+            if (nameMatch && nameMatch[1]) {
+              extractedSupplier = nameMatch[1].trim().toUpperCase()
+              // Remove common noise like "A.S.", "LTD. STI." etc if needed, but keeping for now for accuracy
+            }
+          }
+
           const record = {
-            kayitIsmi: row[colMap['aciklama']] || 'Banka Gideri',
-            tedarikci: row[colMap['islem']] || '',
+            kayitIsmi: description || 'Banka Gideri',
+            tedarikci: extractedSupplier,
             tarih: cleanDate,
             toplamTutar: cleanTutar.toString().replace('.', ','),
             doviz: 'TL',
