@@ -154,6 +154,7 @@ export default function GiderlerRaporu() {
                 type="date" 
                 value={startDate} 
                 onChange={(e) => setStartDate(e.target.value)}
+                onClick={(e) => (e.currentTarget as any).showPicker?.()}
                 className="absolute inset-0 opacity-0 cursor-pointer z-10"
               />
               <span className="text-xs font-bold text-slate-600 whitespace-nowrap">
@@ -166,6 +167,7 @@ export default function GiderlerRaporu() {
                 type="date" 
                 value={endDate} 
                 onChange={(e) => setEndDate(e.target.value)}
+                onClick={(e) => (e.currentTarget as any).showPicker?.()}
                 className="absolute inset-0 opacity-0 cursor-pointer z-10"
               />
               <span className="text-xs font-bold text-slate-600 whitespace-nowrap">
