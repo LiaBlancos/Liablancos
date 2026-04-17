@@ -109,9 +109,14 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
             const cleanH = h.toUpperCase().replace(/\s/g, '')
             if (cleanH.includes('AÇIKLAMA')) colMap['aciklama'] = idx
             if (cleanH.includes('TUTAR')) colMap['tutar'] = idx
-            if (cleanH.includes('TARİH') || cleanH.includes('TARIH')) {
-              if (!colMap['tarih']) colMap['tarih'] = idx // Prefer first date column
+            
+            // Prioritize "İŞLEM TARİHİ" for date
+            if (cleanH === 'İŞLEMTARİHİ' || cleanH === 'ISLEMTARIHI') {
+              colMap['tarih'] = idx
+            } else if ((cleanH.includes('TARİH') || cleanH.includes('TARIH')) && !colMap['tarih']) {
+              colMap['tarih'] = idx
             }
+            
             if (cleanH === 'B/A') colMap['ba'] = idx
             if (cleanH.includes('İŞLEM') || cleanH.includes('ISLEM')) colMap['islem'] = idx
           }
@@ -147,11 +152,9 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
                 const dateObj = XLSX.utils.format_cell({ v: rawDate, t: 'd' } as any)
                 cleanDate = new Date(dateObj).toISOString().split('T')[0]
               } else if (typeof rawDate === 'string') {
-                // Handle "DD.MM.YYYY HH:mm" or "DD.MM.YYYY"
                 const datePart = rawDate.split(' ')[0]
                 const parts = datePart.split('.')
                 if (parts.length === 3) {
-                  // Ensure year is only 4 digits (handle 2026 17:54 case)
                   const year = parts[2].trim().substring(0, 4)
                   cleanDate = `${year}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
                 }
@@ -159,21 +162,22 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
             }
 
             // Smart name extraction from description
-            let extractedSupplier = row[colMap['islem']] || ''
             const description = row[colMap['aciklama']] || ''
+            const transactionType = row[colMap['islem']] || ''
+            let extractedName = transactionType
             
             if (description) {
               const nameMatch = description.match(/(?:hesabından|Bank\s+A\.Ş\.|Bankası|Bank)\s+(.*?)\s+hesabına/i) || 
                                description.match(/(.*?)\s+adına\s+yapılan/i)
               
               if (nameMatch && nameMatch[1]) {
-                extractedSupplier = nameMatch[1].trim().toUpperCase()
+                extractedName = nameMatch[1].trim().toUpperCase()
               }
             }
 
             const record = {
-              kayitIsmi: description || 'Banka Gideri',
-              tedarikci: extractedSupplier,
+              kayitIsmi: extractedName || 'Banka Gideri',
+              tedarikci: extractedName,
               tarih: cleanDate,
               toplamTutar: cleanTutar.toString().replace('.', ','),
               doviz: 'TL',
