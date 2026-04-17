@@ -117,21 +117,25 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
         headers.forEach((h, idx) => {
           if (typeof h === 'string') {
             const cleanH = h.toUpperCase().replace(/\s/g, '')
-            if (cleanH.includes('AÇIKLAMA')) colMap['aciklama'] = idx
-            if (cleanH.includes('TUTAR')) colMap['tutar'] = idx
+            if (cleanH === 'AÇIKLAMA' || cleanH === 'ACIKLAMA') colMap['aciklama'] = idx
+            if (cleanH === 'TUTAR') colMap['tutar'] = idx
             
-            // Prioritize "İŞLEM TARİHİ" for date
-            if (cleanH === 'İŞLEMTARİHİ' || cleanH === 'ISLEMTARIHI') {
+            // Tarih Sütunu (Hassas Eşleşme)
+            if (cleanH === 'İŞLEMTARİHİ' || cleanH === 'ISLEMTARIHI' || cleanH === 'TARİH' || cleanH === 'TARIH') {
               colMap['tarih'] = idx
-            } else if ((cleanH.includes('TARİH') || cleanH.includes('TARIH')) && !colMap['tarih']) {
-              colMap['tarih'] = idx
+            }
+            
+            // İşlem No
+            if (cleanH === 'İŞLEMNO' || cleanH === 'ISLEMNO') {
+              colMap['islemNo'] = idx
+            }
+            
+            // İşlem Tipi / İsmi (Tarih sütunu ile karışmaması için kontrol)
+            if ((cleanH === 'İŞLEM' || cleanH === 'ISLEM' || cleanH === 'İŞLEMTİPİ' || cleanH === 'ISLEMTIPI') && cleanH !== 'İŞLEMTARİHİ' && cleanH !== 'ISLEMTARIHI') {
+              colMap['islem'] = idx
             }
             
             if (cleanH === 'B/A') colMap['ba'] = idx
-            if (cleanH.includes('İŞLEMNO') || cleanH.includes('ISLEMNO')) colMap['islemNo'] = idx
-            if (cleanH.includes('İŞLEM') || cleanH.includes('ISLEM')) {
-              if (!colMap['islem']) colMap['islem'] = idx
-            }
           }
         })
 
