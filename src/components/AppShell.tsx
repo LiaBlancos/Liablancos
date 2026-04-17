@@ -789,7 +789,93 @@ export default function AppShell({ children }: AppShellProps) {
                                 </div>
                             </div>
                         </div>
+                        {/* Mobile Accounting Group */}
+                        <div className="pt-2">
+                            <button
+                                onClick={() => setIsAccountingOpen(!isAccountingOpen)}
+                                className={cn(
+                                    "flex items-center justify-between w-full px-6 py-4 rounded-2xl transition-all",
+                                    pathname.startsWith('/muhasebe') ? "text-white" : "text-slate-400"
+                                )}
+                            >
+                                <div className="flex items-center gap-4">
+                                    <Receipt className="w-6 h-6" />
+                                    <span className="font-black uppercase tracking-widest text-sm">Muhasebe</span>
+                                </div>
+                                <ChevronDown className={cn(
+                                    "w-5 h-5 transition-transform duration-300",
+                                    isAccountingOpen ? "rotate-0" : "-rotate-90"
+                                )} />
+                            </button>
 
+                            <div className={cn(
+                                "grid transition-all duration-300 ease-in-out",
+                                isAccountingOpen ? "grid-rows-[1fr] opacity-100 mt-2" : "grid-rows-[0fr] opacity-0 overflow-hidden"
+                            )}>
+                                <div className="overflow-hidden space-y-2">
+                                    {accountingNavigation.map((item) => (
+                                        <Link
+                                            key={item.name}
+                                            href={item.href}
+                                            onClick={() => setIsMobileMenuOpen(false)}
+                                            className={cn(
+                                                "flex items-center gap-4 ml-8 px-6 py-4 rounded-2xl transition-all",
+                                                pathname === item.href
+                                                    ? "bg-white/10 text-white"
+                                                    : "text-slate-400 hover:bg-white/5"
+                                            )}
+                                        >
+                                            <item.icon className="w-5 h-5" />
+                                            <span className="font-medium">{item.name}</span>
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Mobile Settings Group */}
+                        <div className="pt-2">
+                            <button
+                                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                                className={cn(
+                                    "flex items-center justify-between w-full px-6 py-4 rounded-2xl transition-all",
+                                    pathname.startsWith('/ayarlar') ? "text-white" : "text-slate-400"
+                                )}
+                            >
+                                <div className="flex items-center gap-4">
+                                    <Settings className="w-6 h-6" />
+                                    <span className="font-black uppercase tracking-widest text-sm">Ayarlar</span>
+                                </div>
+                                <ChevronDown className={cn(
+                                    "w-5 h-5 transition-transform duration-300",
+                                    isSettingsOpen ? "rotate-0" : "-rotate-90"
+                                )} />
+                            </button>
+
+                            <div className={cn(
+                                "grid transition-all duration-300 ease-in-out",
+                                isSettingsOpen ? "grid-rows-[1fr] opacity-100 mt-2" : "grid-rows-[0fr] opacity-0 overflow-hidden"
+                            )}>
+                                <div className="overflow-hidden space-y-2">
+                                    {settingsNavigation.map((item) => (
+                                        <Link
+                                            key={item.name}
+                                            href={item.href}
+                                            onClick={() => setIsMobileMenuOpen(false)}
+                                            className={cn(
+                                                "flex items-center gap-4 ml-8 px-6 py-4 rounded-2xl transition-all",
+                                                pathname === item.href
+                                                    ? "bg-white/10 text-white"
+                                                    : "text-slate-400 hover:bg-white/5"
+                                            )}
+                                        >
+                                            <item.icon className="w-5 h-5" />
+                                            <span className="font-medium">{item.name}</span>
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
 
                         <div className="pt-6 border-t border-white/5">
                             {otherNavigation.map((item) => (
