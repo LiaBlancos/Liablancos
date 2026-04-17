@@ -86,7 +86,7 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
 
         // Process each row
         let successCount = 0
-        for (const row: any of data) {
+        for (const row of (data as any[])) {
           // Flexible mapping
           const record = {
             kayitIsmi: row['Açıklama'] || row['Gider İsmi'] || row['Açiklama'] || 'Excel Kaydı',
