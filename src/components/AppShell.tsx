@@ -29,7 +29,14 @@ import {
     Calculator,
     Wallet,
     LogOut,
-    Percent
+    Percent,
+    TrendingUp,
+    Receipt,
+    Coins,
+    FileBarChart,
+    CreditCard,
+    PlusSquare,
+    Tags
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useEffect } from 'react'
@@ -56,6 +63,8 @@ export default function AppShell({ children }: AppShellProps) {
     const [isProductOpen, setIsProductOpen] = useState(false)
     const [isCampaignsOpen, setIsCampaignsOpen] = useState(false)
     const [isFinanceOpen, setIsFinanceOpen] = useState(false)
+    const [isAccountingOpen, setIsAccountingOpen] = useState(false)
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
     useEffect(() => {
         if (isCurrentlyOnStockPage) {
@@ -75,6 +84,12 @@ export default function AppShell({ children }: AppShellProps) {
         }
         if (pathname.startsWith('/finans')) {
             setIsFinanceOpen(true)
+        }
+        if (pathname.startsWith('/muhasebe')) {
+            setIsAccountingOpen(true)
+        }
+        if (pathname.startsWith('/ayarlar')) {
+            setIsSettingsOpen(true)
         }
     }, [pathname, isCurrentlyOnStockPage, isCurrentlyOnShippingPage])
 
@@ -118,6 +133,19 @@ export default function AppShell({ children }: AppShellProps) {
 
     const financeNavigation = [
         { name: 'Ödemeler', href: '/finans/odemeler', icon: Wallet },
+        { name: 'Sipariş Kârlılık', href: '/finans/karlilik', icon: TrendingUp },
+    ]
+
+    const accountingNavigation = [
+        { name: 'Gider Kaydı', href: '/muhasebe/gider-kaydi', icon: PlusSquare },
+        { name: 'Gider Listesi', href: '/muhasebe/gider-listesi', icon: Receipt },
+        { name: 'Giderler Raporu', href: '/muhasebe/giderler-raporu', icon: FileBarChart },
+        { name: 'Ödemeler Raporu', href: '/muhasebe/odemeler-raporu', icon: CreditCard },
+        { name: 'KDV Raporu', href: '/muhasebe/kdv-raporu', icon: Coins },
+    ]
+
+    const settingsNavigation = [
+        { name: 'Kategori ve Etiketler', href: '/ayarlar/kategori-ve-etiketler', icon: Tags },
     ]
 
 
@@ -125,7 +153,6 @@ export default function AppShell({ children }: AppShellProps) {
         { name: 'Raflar', href: '/shelves', icon: LibrarySquare },
         { name: 'Trendyol', href: '/trendyol', icon: ShoppingBag },
         { name: 'Hızlı Kontrol', href: '/audit', icon: ScanLine },
-        { name: 'Ayarlar', href: '/settings', icon: Settings },
     ]
 
     const NavLink = ({ item, isSubItem = false }: { item: any, isSubItem?: boolean }) => {
@@ -351,6 +378,64 @@ export default function AppShell({ children }: AppShellProps) {
                         )}>
                             <div className="overflow-hidden space-y-1">
                                 {financeNavigation.map((item) => <NavLink key={item.name} item={item} isSubItem />)}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Collapsible Accounting Menu */}
+                    <div className="pt-2">
+                        <button
+                            onClick={() => setIsAccountingOpen(!isAccountingOpen)}
+                            className={cn(
+                                "group flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200",
+                                pathname.startsWith('/muhasebe') ? "text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                            )}
+                        >
+                            <div className="flex items-center gap-3">
+                                <Receipt className="w-5 h-5" />
+                                <span className="font-bold uppercase tracking-wider text-[11px]">Muhasebe</span>
+                            </div>
+                            <ChevronDown className={cn(
+                                "w-4 h-4 transition-transform duration-300 opacity-50",
+                                isAccountingOpen ? "rotate-0" : "-rotate-90"
+                            )} />
+                        </button>
+
+                        <div className={cn(
+                            "grid transition-all duration-300 ease-in-out",
+                            isAccountingOpen ? "grid-rows-[1fr] opacity-100 mt-1" : "grid-rows-[0fr] opacity-0 overflow-hidden"
+                        )}>
+                            <div className="overflow-hidden space-y-1">
+                                {accountingNavigation.map((item) => <NavLink key={item.name} item={item} isSubItem />)}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Collapsible Settings Menu */}
+                    <div className="pt-2">
+                        <button
+                            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                            className={cn(
+                                "group flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200",
+                                pathname.startsWith('/ayarlar') ? "text-white" : "text-slate-400 hover:text-white hover:bg-white/5"
+                            )}
+                        >
+                            <div className="flex items-center gap-3">
+                                <Settings className="w-5 h-5" />
+                                <span className="font-bold uppercase tracking-wider text-[11px]">Ayarlar</span>
+                            </div>
+                            <ChevronDown className={cn(
+                                "w-4 h-4 transition-transform duration-300 opacity-50",
+                                isSettingsOpen ? "rotate-0" : "-rotate-90"
+                            )} />
+                        </button>
+
+                        <div className={cn(
+                            "grid transition-all duration-300 ease-in-out",
+                            isSettingsOpen ? "grid-rows-[1fr] opacity-100 mt-1" : "grid-rows-[0fr] opacity-0 overflow-hidden"
+                        )}>
+                            <div className="overflow-hidden space-y-1">
+                                {settingsNavigation.map((item) => <NavLink key={item.name} item={item} isSubItem />)}
                             </div>
                         </div>
                     </div>
