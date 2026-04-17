@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { FileBarChart, TrendingDown, DollarSign, PieChart, Calendar, ArrowUpRight, ArrowDownRight, CreditCard, Wallet, Activity } from 'lucide-react'
+import { FileBarChart, TrendingDown, DollarSign, PieChart, Calendar, ArrowUpRight, ArrowDownRight, CreditCard, Wallet, Activity, Clock } from 'lucide-react'
 import { getExpenses } from '@/lib/actions'
 import { formatCurrency } from '@/lib/utils'
 import { GIDER_KATEGORILERI } from '@/lib/constants'
