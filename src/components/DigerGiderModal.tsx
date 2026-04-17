@@ -77,27 +77,99 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
         const wb = XLSX.read(bstr, { type: 'binary' })
         const wsname = wb.SheetNames[0]
         const ws = wb.Sheets[wsname]
-        const data = XLSX.utils.sheet_to_json(ws)
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][]
 
         if (data.length === 0) {
           toast.error('Excel dosyası boş veya geçersiz formatta.')
           return
         }
 
+        // Find header row (the one containing "TUTAR" and "AÇIKLAMA")
+        let headerRowIndex = -1
+        for (let i = 0; i < Math.min(data.length, 20); i++) {
+          const row = data[i]
+          if (row.some(cell => typeof cell === 'string' && cell.includes('TUTAR')) && 
+              row.some(cell => typeof cell === 'string' && cell.includes('AÇIKLAMA'))) {
+            headerRowIndex = i
+            break
+          }
+        }
+
+        if (headerRowIndex === -1) {
+          toast.error('Excel formatı tanınamadı. Lütfen "TUTAR" ve "AÇIKLAMA" sütunlarının olduğundan emin olun.')
+          return
+        }
+
+        const headers = data[headerRowIndex]
+        const rows = data.slice(headerRowIndex + 1)
+        
+        const colMap: Record<string, number> = {}
+        headers.forEach((h, idx) => {
+          if (typeof h === 'string') {
+            const cleanH = h.toUpperCase().replace(/\s/g, '')
+            if (cleanH.includes('AÇIKLAMA')) colMap['aciklama'] = idx
+            if (cleanH.includes('TUTAR')) colMap['tutar'] = idx
+            if (cleanH.includes('TARİH') || cleanH.includes('TARIH')) {
+              if (!colMap['tarih']) colMap['tarih'] = idx // Prefer first date column
+            }
+            if (cleanH === 'B/A') colMap['ba'] = idx
+            if (cleanH.includes('İŞLEM') || cleanH.includes('ISLEM')) colMap['islem'] = idx
+          }
+        })
+
         // Process each row
         let successCount = 0
-        for (const row of (data as any[])) {
-          // Flexible mapping
-          const record = {
-            kayitIsmi: row['Açıklama'] || row['Gider İsmi'] || row['Açiklama'] || 'Excel Kaydı',
-            tedarikci: row['Tedarikçi'] || row['Banka'] || '',
-            tarih: row['Tarih'] ? new Date(row['Tarih']).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-            toplamTutar: row['Tutar'] || row['Toplam Tutar'] || '0',
-            doviz: row['Döviz'] || 'TL',
-            odemeDurumu: 'odendi',
-            giderKategorisi: row['Kategori'] || 'Genel Giderler',
-            etiket: 'Excel Aktarımı'
+        for (const row of rows) {
+          if (!row[colMap['tutar']] || !row[colMap['aciklama']]) continue
+
+          const baValue = row[colMap['ba']]
+          const rawTutar = row[colMap['tutar']]
+          
+          // Filter: Only take "Borç (B)" transactions or negative values as expenses
+          // In some bank excels, negative values are expenses. 
+          // In VakıfBank, "B" indicates debt/expense.
+          const isExpense = (baValue === 'B') || (typeof rawTutar === 'number' && rawTutar < 0) || (typeof rawTutar === 'string' && rawTutar.includes('-'))
+          
+          if (!isExpense) continue
+
+          // Handle Turkish number formatting (1.500,00 -> 1500.00)
+          let cleanTutar = 0
+          if (typeof rawTutar === 'number') {
+            cleanTutar = Math.abs(rawTutar)
+          } else if (typeof rawTutar === 'string') {
+            cleanTutar = Math.abs(parseFloat(rawTutar.replace(/\./g, '').replace(',', '.')))
           }
+
+          // Handle Date
+          let cleanDate = new Date().toISOString().split('T')[0]
+          const rawDate = row[colMap['tarih']]
+          if (rawDate) {
+            if (typeof rawDate === 'number') {
+              // Excel serial date
+              const dateObj = XLSX.utils.format_cell({ v: rawDate, t: 'd' } as any)
+              cleanDate = new Date(dateObj).toISOString().split('T')[0]
+            } else if (typeof rawDate === 'string') {
+              // Support DD.MM.YYYY
+              const parts = rawDate.split('.')
+              if (parts.length === 3) {
+                cleanDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+              }
+            }
+          }
+
+          const record = {
+            kayitIsmi: row[colMap['aciklama']] || 'Banka Gideri',
+            tedarikci: row[colMap['islem']] || '',
+            tarih: cleanDate,
+            toplamTutar: cleanTutar.toString().replace('.', ','),
+            doviz: 'TL',
+            odemeDurumu: 'odendi',
+            giderKategorisi: formData.giderKategorisi || 'Banka Giderleri',
+            etiket: formData.etiket || 'Banka',
+            toplamKdv: '0',
+            kdvOrani: 0
+          }
+          
           await onSave(record)
           successCount++
         }
