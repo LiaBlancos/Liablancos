@@ -7,6 +7,7 @@ import DetayliFisModal from '@/components/DetayliFisModal'
 import CategoryTag from '@/components/CategoryTag'
 import { GIDER_KATEGORILERI, ETIKETLER } from '@/lib/constants'
 import { formatCurrency } from '@/lib/utils'
+import DigerGiderModal from '@/components/DigerGiderModal'
 
 import { getExpenses, saveExpense, deleteExpense as apiDeleteExpense } from '@/lib/actions'
 import { toast } from 'sonner'
@@ -34,6 +35,7 @@ export default function GiderKaydiPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isHizliOpen, setIsHizliOpen] = useState(false)
   const [isDetayliOpen, setIsDetayliOpen] = useState(false)
+  const [isDigerOpen, setIsDigerOpen] = useState(false)
   const [records, setRecords] = useState<GiderKaydi[]>([])
   const [editingRecord, setEditingRecord] = useState<GiderKaydi | null>(null)
   const [loading, setLoading] = useState(true)
@@ -67,6 +69,7 @@ export default function GiderKaydiPage() {
         fetchExpenses()
         setIsHizliOpen(false)
         setIsDetayliOpen(false)
+        setIsDigerOpen(false)
         setEditingRecord(null)
       }
     } catch (error: any) {
@@ -78,6 +81,8 @@ export default function GiderKaydiPage() {
     setEditingRecord(record)
     if (record.lineItems && record.lineItems.length > 0) {
       setIsDetayliOpen(true)
+    } else if (!record.fisNo && !record.dosya) {
+      setIsDigerOpen(true)
     } else {
       setIsHizliOpen(true)
     }
@@ -151,18 +156,24 @@ export default function GiderKaydiPage() {
             <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
           </div>
         </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => setIsHizliOpen(true)}
-            className="flex flex-1 sm:flex-none items-center justify-center gap-2 px-6 py-3 bg-[#6A5E5B] hover:bg-[#5A4E4B] text-white rounded-xl font-bold text-[13px] tracking-wide transition-colors"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-[#6A5E5B] hover:bg-[#5A4E4B] text-white rounded-xl font-bold text-[13px] tracking-wide transition-colors"
           >
             HIZLI FİŞ/FATURA
           </button>
           <button
             onClick={() => setIsDetayliOpen(true)}
-            className="flex flex-1 sm:flex-none items-center justify-center gap-2 px-6 py-3 bg-[#6A5E5B] hover:bg-[#5A4E4B] text-white rounded-xl font-bold text-[13px] tracking-wide transition-colors"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-[#6A5E5B] hover:bg-[#5A4E4B] text-white rounded-xl font-bold text-[13px] tracking-wide transition-colors"
           >
             DETAYLI FİŞ/FATURA
+          </button>
+          <button
+            onClick={() => setIsDigerOpen(true)}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-[#8B7E6A] hover:bg-[#7A6D59] text-white rounded-xl font-bold text-[13px] tracking-wide transition-colors border-2 border-white/10 shadow-lg"
+          >
+            DİĞER GİDER KAYITLARI
           </button>
         </div>
       </div>
@@ -282,6 +293,13 @@ export default function GiderKaydiPage() {
         isOpen={isHizliOpen} 
         onClose={() => { setIsHizliOpen(false); setEditingRecord(null); }} 
         onSave={handleSave} 
+        initialData={editingRecord}
+      />
+
+      <DigerGiderModal
+        isOpen={isDigerOpen}
+        onClose={() => { setIsDigerOpen(false); setEditingRecord(null); }}
+        onSave={handleSave}
         initialData={editingRecord}
       />
 
