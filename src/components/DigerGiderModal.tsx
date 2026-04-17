@@ -11,7 +11,7 @@ import { getExpenseRules } from '@/lib/actions'
 interface DigerGiderModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave: (data: any) => void
+  onSave: (data: any) => Promise<any>
   initialData?: any
 }
 

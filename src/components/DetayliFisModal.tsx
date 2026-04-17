@@ -11,7 +11,7 @@ import {
 interface DetayliFisModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave?: (data: any) => void
+  onSave: (data: any) => Promise<any>
   initialData?: any
 }
 

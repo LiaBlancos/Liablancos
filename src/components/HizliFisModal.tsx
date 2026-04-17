@@ -11,7 +11,7 @@ import {
 interface HizliFisModalProps {
   isOpen: boolean
   onClose: () => void
-  onSave?: (data: any) => void
+  onSave: (data: any) => Promise<any>
   initialData?: any
 }
 
