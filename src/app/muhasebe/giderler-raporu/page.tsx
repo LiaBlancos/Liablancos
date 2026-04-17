@@ -18,6 +18,13 @@ const COLORS = [
 export default function GiderlerRaporu() {
   const [loading, setLoading] = useState(true)
   const [records, setRecords] = useState<any[]>([])
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 30)
+    return d.toISOString().split('T')[0]
+  })
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
+  
   const [stats, setStats] = useState({
     total: 0,
     paid: 0,
@@ -32,6 +39,12 @@ export default function GiderlerRaporu() {
     fetchData()
   }, [])
 
+  useEffect(() => {
+    if (records.length > 0) {
+      processStats(records)
+    }
+  }, [startDate, endDate])
+
   const fetchData = async () => {
     try {
       const data = await getExpenses()
@@ -45,12 +58,18 @@ export default function GiderlerRaporu() {
   }
 
   const processStats = (data: any[]) => {
+    // Filter data by date range
+    const filtered = data.filter(r => {
+      const d = r.tarih.split('T')[0]
+      return d >= startDate && d <= endDate
+    })
+
     // 1. Basic Stats
     let total = 0
     let paid = 0
     let pending = 0
     
-    data.forEach(r => {
+    filtered.forEach(r => {
       const tutar = parseFloat(r.toplamTutar) || 0
       total += tutar
       if (r.odemeDurumu === 'odendi') paid += tutar
@@ -62,12 +81,12 @@ export default function GiderlerRaporu() {
       paid,
       pending,
       count: data.length,
-      avg: data.length > 0 ? total / data.length : 0
+      avg: filtered.length > 0 ? total / filtered.length : 0
     })
 
     // 2. Category Distribution
     const catMap: any = {}
-    data.forEach(r => {
+    filtered.forEach(r => {
       const cat = r.giderKategorisi || 'DİĞER GİDERLER'
       const tutar = parseFloat(r.toplamTutar) || 0
       catMap[cat] = (catMap[cat] || 0) + tutar
@@ -89,7 +108,7 @@ export default function GiderlerRaporu() {
       monthMap[label] = 0
     }
 
-    data.forEach(r => {
+    filtered.forEach(r => {
       const d = new Date(r.tarih)
       const label = d.toLocaleDateString('tr-TR', { month: 'short', year: '2-digit' })
       if (monthMap[label] !== undefined) {
@@ -115,20 +134,38 @@ export default function GiderlerRaporu() {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header & Filter */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-slate-200/60 shadow-sm">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center">
             <Activity className="w-6 h-6 text-indigo-500" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Giderler Raporu</h1>
-            <p className="text-slate-500 text-sm">Finansal durumunuzu ve harcama alışkanlıklarınızı analiz edin.</p>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight leading-tight">Giderler Raporu</h1>
+            <p className="text-slate-500 text-xs font-medium">Finansal durum analizi</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-400 bg-white border border-slate-200 px-4 py-2 rounded-xl shadow-sm">
-          <Calendar className="w-4 h-4" />
-          {new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <input 
+              type="date" 
+              value={startDate} 
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-transparent text-xs font-bold text-slate-600 outline-none"
+            />
+            <span className="text-slate-300">-</span>
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={(e) => setEndDate(e.target.value)}
+              className="bg-transparent text-xs font-bold text-slate-600 outline-none"
+            />
+          </div>
+          <div className="hidden lg:flex items-center gap-2 text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-2 rounded-xl uppercase tracking-wider">
+            {new Date().toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })}
+          </div>
         </div>
       </div>
 
@@ -255,7 +292,14 @@ export default function GiderlerRaporu() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {records.sort((a, b) => parseFloat(b.toplamTutar) - parseFloat(a.toplamTutar)).slice(0, 5).map((r, i) => (
+              {records
+                .filter(r => {
+                  const d = r.tarih.split('T')[0]
+                  return d >= startDate && d <= endDate
+                })
+                .sort((a, b) => parseFloat(b.toplamTutar) - parseFloat(a.toplamTutar))
+                .slice(0, 5)
+                .map((r, i) => (
                 <tr key={i} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="font-bold text-slate-700 text-sm">{r.kayitIsmi}</div>
