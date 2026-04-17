@@ -18,6 +18,7 @@ const COLORS = [
 export default function GiderlerRaporu() {
   const [loading, setLoading] = useState(true)
   const [records, setRecords] = useState<any[]>([])
+  const [filteredRecords, setFilteredRecords] = useState<any[]>([])
   const [startDate, setStartDate] = useState(() => {
     const d = new Date()
     d.setDate(d.getDate() - 30)
@@ -60,9 +61,11 @@ export default function GiderlerRaporu() {
   const processStats = (data: any[]) => {
     // Filter data by date range
     const filtered = data.filter(r => {
-      const d = r.tarih.split('T')[0]
+      const d = r.tarih ? r.tarih.split('T')[0] : ''
       return d >= startDate && d <= endDate
     })
+
+    setFilteredRecords(filtered)
 
     // 1. Basic Stats
     let total = 0
@@ -80,7 +83,7 @@ export default function GiderlerRaporu() {
       total,
       paid,
       pending,
-      count: data.length,
+      count: filtered.length,
       avg: filtered.length > 0 ? total / filtered.length : 0
     })
 
@@ -304,11 +307,7 @@ export default function GiderlerRaporu() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {records
-                .filter(r => {
-                  const d = r.tarih.split('T')[0]
-                  return d >= startDate && d <= endDate
-                })
+              {filteredRecords
                 .sort((a, b) => parseFloat(b.toplamTutar) - parseFloat(a.toplamTutar))
                 .slice(0, 5)
                 .map((r, i) => (
