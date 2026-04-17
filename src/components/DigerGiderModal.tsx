@@ -154,50 +154,54 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
 
         {view === 'selection' ? (
           <div className="p-8 grid grid-cols-1 gap-4">
-            {/* Excel Option */}
+            {/* Bank Excel Option */}
             <button 
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                setFormData(prev => ({ ...prev, giderKategorisi: 'Banka Giderleri', etiket: 'Banka' }))
+                fileInputRef.current?.click()
+              }}
               disabled={loading}
-              className="group flex items-center gap-5 p-6 rounded-2xl bg-slate-50 hover:bg-emerald-50 border-2 border-transparent hover:border-emerald-200 transition-all text-left"
-            >
-              <div className="w-14 h-14 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 group-hover:scale-110 transition-transform">
-                {loading ? <Loader2 className="w-7 h-7 animate-spin" /> : <FileSpreadsheet className="w-7 h-7" />}
-              </div>
-              <div>
-                <h4 className="font-bold text-slate-800 text-lg">Excel ile Gider Kaydı</h4>
-                <p className="text-slate-500 text-sm mt-0.5">Toplu gider listelerinizi anında içeri aktarın</p>
-              </div>
-              <Upload className="w-5 h-5 text-slate-300 ml-auto" />
-            </button>
-            <input type="file" ref={fileInputRef} onChange={handleExcelUpload} accept=".xlsx, .xls" className="hidden" />
-
-            {/* Bank Option */}
-            <button 
-              onClick={() => handleSelection('bank')}
               className="group flex items-center gap-5 p-6 rounded-2xl bg-slate-50 hover:bg-blue-50 border-2 border-transparent hover:border-blue-200 transition-all text-left"
             >
               <div className="w-14 h-14 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform">
-                <Landmark className="w-7 h-7" />
+                {loading ? <Loader2 className="w-7 h-7 animate-spin" /> : <Landmark className="w-7 h-7" />}
               </div>
               <div>
-                <h4 className="font-bold text-slate-800 text-lg">Banka Gider Kaydı</h4>
-                <p className="text-slate-500 text-sm mt-0.5">Banka komisyonları ve masrafları için hızlı kayıt</p>
+                <h4 className="font-bold text-slate-800 text-lg">Banka Giderleri (Excel)</h4>
+                <p className="text-slate-500 text-sm mt-0.5">Banka ekstrelerini toplu olarak içeri aktarın</p>
               </div>
+              <Upload className="w-5 h-5 text-slate-300 ml-auto" />
             </button>
 
-            {/* Ad Option */}
+            {/* Ad Excel Option */}
             <button 
-              onClick={() => handleSelection('ad')}
+              onClick={() => {
+                setFormData(prev => ({ ...prev, giderKategorisi: 'Reklam Giderleri', etiket: 'Reklam' }))
+                fileInputRef.current?.click()
+              }}
+              disabled={loading}
               className="group flex items-center gap-5 p-6 rounded-2xl bg-slate-50 hover:bg-orange-50 border-2 border-transparent hover:border-orange-200 transition-all text-left"
             >
               <div className="w-14 h-14 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-600 group-hover:scale-110 transition-transform">
-                <Megaphone className="w-7 h-7" />
+                {loading ? <Loader2 className="w-7 h-7 animate-spin" /> : <Megaphone className="w-7 h-7" />}
               </div>
               <div>
-                <h4 className="font-bold text-slate-800 text-lg">Reklam Gider Kaydı</h4>
-                <p className="text-slate-500 text-sm mt-0.5">Pazaryeri ve sosyal medya reklam ödemeleri</p>
+                <h4 className="font-bold text-slate-800 text-lg">Reklam Giderleri (Excel)</h4>
+                <p className="text-slate-500 text-sm mt-0.5">Reklam harcamalarını toplu olarak içeri aktarın</p>
               </div>
+              <Upload className="w-5 h-5 text-slate-300 ml-auto" />
             </button>
+
+            <input type="file" ref={fileInputRef} onChange={handleExcelUpload} accept=".xlsx, .xls" className="hidden" />
+
+            <div className="pt-4 border-t border-slate-100 mt-2">
+              <button 
+                onClick={() => setView('form')}
+                className="w-full py-4 text-slate-400 font-bold text-sm hover:text-[#8B7E6A] transition-colors"
+              >
+                + MANUEL GİDER KAYDI EKLE
+              </button>
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-8 space-y-6">
