@@ -191,28 +191,35 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
 
             // Dynamic Category Mapping
             let autoCategory = formData.giderKategorisi || 'DİĞER GİDERLER'
-            const searchStr = (extractedName + ' ' + description).toUpperCase()
+            
+            // Normalize for Turkish character insensitive comparison
+            const normalize = (str: string) => 
+              str.replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase()
+                 .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+            const searchStr = normalize(extractedName + ' ' + description + ' ' + transactionType)
             
             // 1. Check user-defined rules from settings
-            const matchingRule = rules.find(r => searchStr.includes(r.keyword.toUpperCase()))
+            const matchingRule = rules.find(r => searchStr.includes(normalize(r.keyword)))
+            
             if (matchingRule) {
               autoCategory = matchingRule.category
             } else {
               // 2. Fallback to hardcoded defaults
-              if (searchStr.includes('REKLAM') || searchStr.includes('GOOGLE') || searchStr.includes('FACEBOOK') || searchStr.includes('META')) {
+              if (searchStr.includes('reklam') || searchStr.includes('google') || searchStr.includes('facebook') || searchStr.includes('meta')) {
                 autoCategory = 'REKLAM GİDERİ'
-              } else if (searchStr.includes('TRENDYOL')) {
-                if (searchStr.includes('KOMİSYON')) autoCategory = 'TRENDYOL KOMİSYONU'
+              } else if (searchStr.includes('trendyol')) {
+                if (searchStr.includes('komisyon')) autoCategory = 'TRENDYOL KOMİSYONU'
                 else autoCategory = 'PLATFORM HİZMET BEDELİ'
-              } else if (searchStr.includes('KARGO') || searchStr.includes('YURTİÇİ') || searchStr.includes('ARAS') || searchStr.includes('MNG')) {
+              } else if (searchStr.includes('kargo') || searchStr.includes('yurtici') || searchStr.includes('aras') || searchStr.includes('mng')) {
                 autoCategory = 'KARGO GİDERİ'
-              } else if (searchStr.includes('MAAŞ') || searchStr.includes('MAAS') || searchStr.includes('PERSONEL') || searchStr.includes('SGK') || searchStr.includes('YEMEK')) {
+              } else if (searchStr.includes('maas') || searchStr.includes('personel') || searchStr.includes('sgk') || searchStr.includes('yemek')) {
                 autoCategory = 'ÇALIŞAN GİDERİ'
-              } else if (searchStr.includes('STOPAJ') || searchStr.includes('VERGİ') || searchStr.includes('VERGI')) {
+              } else if (searchStr.includes('stopaj') || searchStr.includes('vergi')) {
                 autoCategory = 'E-TİCARET STOPAJI'
-              } else if (searchStr.includes('HİZMET') || searchStr.includes('HIZMET')) {
+              } else if (searchStr.includes('hizmet')) {
                 autoCategory = 'HİZMET BEDELİ'
-              } else if (searchStr.includes('MASRAF') || searchStr.includes('KOMİSYON') || searchStr.includes('TAHSİLAT')) {
+              } else if (searchStr.includes('masraf') || searchStr.includes('komisyon') || searchStr.includes('tahsilat')) {
                 autoCategory = 'MASRAF TAHSİLATI'
               }
             }
