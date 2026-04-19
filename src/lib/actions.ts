@@ -2268,6 +2268,7 @@ export async function getExpenses() {
         lineItems: item.line_items,
         stokTakipli: item.stok_takipli,
         islemNo: item.islem_no,
+        aciklama: item.aciklama,
         createdAt: item.created_at
     }))
 }
@@ -2288,7 +2289,8 @@ export async function saveExpense(data: any) {
         dosya: data.dosya,
         line_items: data.lineItems || [],
         stok_takipli: data.stokTakipli || false,
-        islem_no: data.islemNo
+        islem_no: data.islemNo,
+        aciklama: data.aciklama
     }
 
     let result
@@ -2313,6 +2315,61 @@ export async function saveExpense(data: any) {
     if (result.error) {
         console.error('Error saving expense:', result.error)
         throw new Error(result.error.message)
+    }
+
+    revalidatePath('/muhasebe/gider-kaydi')
+    return { success: true }
+}
+
+export async function bulkSaveExpenses(records: any[]) {
+    const dbRecords = records.map(data => {
+        const parseNum = (val: any) => {
+            if (val === undefined || val === null || val === '') return 0
+            if (typeof val === 'number') return val
+            if (typeof val === 'string') return parseFloat(val.replace(/\./g, '').replace(',', '.')) || 0
+            return 0
+        }
+
+        return {
+            kayit_ismi: data.kayitIsmi,
+            tedarikci: data.tedarikci,
+            tarih: data.tarih,
+            toplam_tutar: parseNum(data.toplamTutar),
+            doviz: data.doviz || 'TL',
+            toplam_kdv: parseNum(data.toplamKdv),
+            kdv_orani: data.kdvOrani || 0,
+            odeme_durumu: data.odemeDurumu,
+            gider_kategorisi: data.giderKategorisi,
+            etiket: data.etiket,
+            fis_no: data.fisNo,
+            dosya: data.dosya,
+            line_items: data.lineItems || [],
+            stok_takipli: data.stokTakipli || false,
+            islem_no: data.islemNo,
+            aciklama: data.aciklama
+        }
+    })
+
+    // Use upsert with onConflict on islem_no if possible
+    // We only use islem_no for conflict resolution if it's provided
+    // For records without islem_no, we just insert them normally but that's hard in a bulk upsert
+    // So we split them: those with islemNo and those without.
+    
+    const withIslemNo = dbRecords.filter(r => r.islem_no && r.islem_no.trim() !== '')
+    const withoutIslemNo = dbRecords.filter(r => !r.islem_no || r.islem_no.trim() === '')
+
+    if (withIslemNo.length > 0) {
+        const { error } = await supabase
+            .from('expenses')
+            .upsert(withIslemNo, { onConflict: 'islem_no', ignoreDuplicates: true })
+        if (error) throw new Error(error.message)
+    }
+
+    if (withoutIslemNo.length > 0) {
+        const { error } = await supabase
+            .from('expenses')
+            .insert(withoutIslemNo)
+        if (error) throw new Error(error.message)
     }
 
     revalidatePath('/muhasebe/gider-kaydi')
@@ -2350,10 +2407,10 @@ export async function getExpenseRules() {
     return data
 }
 
-export async function saveExpenseRule(keyword: string, category: string) {
+export async function saveExpenseRule(keyword: string, category: string, kdvOrani?: number) {
     const { data, error } = await supabase
         .from('expense_rules')
-        .upsert([{ keyword, category }], { onConflict: 'keyword' })
+        .upsert([{ keyword, category, kdv_orani: kdvOrani ?? null }], { onConflict: 'keyword' })
 
     if (error) {
         console.error('Error saving expense rule:', error)

@@ -39,7 +39,7 @@ export default function KategoriVeEtiketlerPage() {
   const [rules, setRules] = useState<any[]>([])
   const [isRuleModalOpen, setIsRuleModalOpen] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [newRule, setNewRule] = useState({ keyword: '', category: '' })
+  const [newRule, setNewRule] = useState({ keyword: '', category: '', kdvOrani: 0 })
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
@@ -61,9 +61,9 @@ export default function KategoriVeEtiketlerPage() {
 
     setIsSaving(true)
     try {
-      await saveExpenseRule(newRule.keyword, newRule.category)
+      await saveExpenseRule(newRule.keyword, newRule.category, newRule.kdvOrani)
       toast.success('Kural başarıyla eklendi')
-      setNewRule({ keyword: '', category: '' })
+      setNewRule({ keyword: '', category: '', kdvOrani: 0 })
       setIsRuleModalOpen(false)
       fetchRules()
     } catch (error: any) {
@@ -140,6 +140,11 @@ export default function KategoriVeEtiketlerPage() {
                             text={rule.category} 
                             color={GIDER_KATEGORILERI.find(c => c.text === rule.category)?.color || 'gray'} 
                           />
+                          {rule.kdv_orani > 0 && (
+                            <span className="ml-2 px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded text-[10px] font-bold">
+                              %{rule.kdv_orani} KDV
+                            </span>
+                          )}
                         </div>
                       </div>
                       <button 
@@ -218,6 +223,20 @@ export default function KategoriVeEtiketlerPage() {
                   {GIDER_KATEGORILERI.map(cat => (
                     <option key={cat.text} value={cat.text}>{cat.text}</option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">KDV Oranı (Opsiyonel)</label>
+                <select 
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-medium appearance-none"
+                  value={newRule.kdvOrani}
+                  onChange={(e) => setNewRule({ ...newRule, kdvOrani: Number(e.target.value) })}
+                >
+                  <option value={0}>Belirtilmedi (%0)</option>
+                  <option value={1}>%1</option>
+                  <option value={10}>%10</option>
+                  <option value={20}>%20</option>
                 </select>
               </div>
 

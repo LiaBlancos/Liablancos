@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS expenses (
     dosya TEXT,
     line_items JSONB DEFAULT '[]'::jsonb,
     stok_takipli BOOLEAN DEFAULT FALSE,
+    islem_no TEXT UNIQUE,
+    aciklama TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

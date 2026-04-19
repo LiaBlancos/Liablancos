@@ -271,7 +271,7 @@ export default function GiderlerRaporu() {
                 </Pie>
                 <Tooltip 
                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                   formatter={(value: any) => [formatCurrency(value), '']}
+                   formatter={(value: any, name: any) => [`${formatCurrency(value)} ₺`, name]}
                 />
               </RePie>
             </ResponsiveContainer>

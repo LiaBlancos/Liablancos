@@ -1,20 +1,35 @@
 import { getTrendyolOrders } from '@/lib/actions'
-import { ShoppingBag, Package, User, Calendar, ExternalLink, AlertCircle, RefreshCcw } from 'lucide-react'
+import { ShoppingBag, Package, Calendar, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import Link from 'next/link'
+import RefreshOrdersButton from '@/components/RefreshOrdersButton'
 
 export const dynamic = 'force-dynamic'
 
-export default async function OrdersPage() {
-    // Fetch only active/new orders (Created status in Trendyol)
-    const result = await getTrendyolOrders('Created')
-    const orders = result.orders || []
+interface PageProps {
+    searchParams: Promise<{ tab?: string }>
+}
+
+export default async function OrdersPage({ searchParams }: PageProps) {
+    const { tab } = await searchParams
+    const activeTab = tab || 'yeni'
+
+    const sixtyDaysAgo = Date.now() - (60 * 24 * 60 * 60 * 1000)
+    const result = await getTrendyolOrders(['Created', 'Picking'], 0, 50, sixtyDaysAgo)
+    const allOrders = result.orders || []
     const error = result.error
+
+    // Filter orders by tab
+    const yeniOrders = allOrders.filter((o: any) => o.status === 'Created')
+    const islemedekiOrders = allOrders.filter((o: any) => o.status === 'Picking')
+
+    const displayOrders = activeTab === 'yeni' ? yeniOrders : islemedekiOrders
 
     return (
         <div className="space-y-8">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="flex items-center gap-4 text-left">
                     <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
                         <ShoppingBag className="w-7 h-7 text-white" />
                     </div>
@@ -23,6 +38,47 @@ export default async function OrdersPage() {
                         <p className="text-zinc-500 font-medium tracking-tight">Trendyol mağazanızdan gelen son siparişler</p>
                     </div>
                 </div>
+                <div className="flex items-center gap-3">
+                    <RefreshOrdersButton />
+                </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex items-center gap-2 p-1.5 bg-zinc-100/50 rounded-2xl w-fit">
+                <Link
+                    href="?tab=yeni"
+                    className={cn(
+                        "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
+                        activeTab === 'yeni'
+                            ? "bg-white text-indigo-600 shadow-sm"
+                            : "text-zinc-500 hover:text-zinc-700"
+                    )}
+                >
+                    Yeni
+                    <span className={cn(
+                        "px-2 py-0.5 rounded-lg text-[10px] font-black",
+                        activeTab === 'yeni' ? "bg-indigo-50 text-indigo-600" : "bg-zinc-200/50 text-zinc-400"
+                    )}>
+                        {yeniOrders.length}
+                    </span>
+                </Link>
+                <Link
+                    href="?tab=isleme"
+                    className={cn(
+                        "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
+                        activeTab === 'isleme'
+                            ? "bg-white text-indigo-600 shadow-sm"
+                            : "text-zinc-500 hover:text-zinc-700"
+                    )}
+                >
+                    İşleme Alınanlar
+                    <span className={cn(
+                        "px-2 py-0.5 rounded-lg text-[10px] font-black",
+                        activeTab === 'isleme' ? "bg-indigo-50 text-indigo-600" : "bg-zinc-200/50 text-zinc-400"
+                    )}>
+                        {islemedekiOrders.length}
+                    </span>
+                </Link>
             </div>
 
             {error && (
@@ -40,18 +96,20 @@ export default async function OrdersPage() {
                 </div>
             )}
 
-            {!error && orders.length === 0 && (
+            {!error && displayOrders.length === 0 && (
                 <div className="text-center py-20 bg-white rounded-[3rem] border-2 border-dashed border-zinc-100">
                     <div className="w-24 h-24 rounded-full bg-zinc-50 flex items-center justify-center mx-auto mb-4 border-2 border-dashed border-zinc-200">
                         <ShoppingBag className="w-12 h-12 text-zinc-200" />
                     </div>
                     <h3 className="text-xl font-bold text-zinc-900">Sipariş Bulunamadı</h3>
-                    <p className="text-zinc-500">Şu an aktif bir siparişiniz bulunmuyor.</p>
+                    <p className="text-zinc-500">
+                        {activeTab === 'yeni' ? 'Şu an bekleyen yeni siparişiniz bulunmuyor.' : 'Şu an işleme alınmış bir siparişiniz bulunmuyor.'}
+                    </p>
                 </div>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {orders.map((order: any) => (
+                {displayOrders.map((order: any) => (
                     <div key={order.orderNumber} className="group bg-white rounded-[2.5rem] border border-zinc-100 hover:shadow-2xl hover:shadow-indigo-500/10 transition-all duration-500 overflow-hidden flex flex-col">
                         {/* Order Header Info */}
                         <div className="p-6 md:p-8 border-b border-zinc-50 bg-zinc-50/50 group-hover:bg-white transition-colors">
@@ -71,7 +129,7 @@ export default async function OrdersPage() {
                                         order.status === 'Picking' ? "bg-indigo-500 text-white" :
                                             order.status === 'Shipped' ? "bg-emerald-500 text-white" : "bg-zinc-500 text-white"
                                 )}>
-                                    {order.status === 'Created' ? 'Yeni Sipariş' : order.status}
+                                    {order.status === 'Created' ? 'Yeni Sipariş' : order.status === 'Picking' ? 'İşleme Alındı' : order.status}
                                 </div>
                             </div>
 

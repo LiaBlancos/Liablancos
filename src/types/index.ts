@@ -222,3 +222,50 @@ export type ManufacturingCatalogEntry = {
     created_at: string
     product?: Product
 }
+
+// --- Order Profitability Analysis Types ---
+
+export type ProfitabilityOrder = {
+    id: string
+    order_number: string
+    customer_name: string | null
+    total_price: number
+    gross_cost: number
+    net_profit: number
+    currency: string
+    status: string | null
+    order_date: string | null
+    last_synced_at: string | null
+    is_settled?: boolean
+    created_at: string
+    updated_at: string
+    items?: ProfitabilityOrderItem[]
+    fees?: ProfitabilityOrderFee[]
+}
+
+export type ProfitabilityOrderItem = {
+    id: string
+    order_id: string
+    product_id: string | null
+    sku: string | null
+    barcode: string | null
+    product_name: string | null
+    quantity: number
+    unit_price: number
+    vat_rate: number
+    unit_cost: number
+    status: string | null
+    created_at: string
+}
+
+export type ProfitabilityOrderFee = {
+    id: string
+    order_id: string
+    order_item_id: string | null
+    fee_type: 'COMMISSION' | 'SHIPPING' | 'SERVICE_FEE' | 'DISCOUNT' | 'PENALTY' | 'RETURN_COST' | string
+    amount: number
+    currency: string
+    description: string | null
+    transaction_date: string | null
+    created_at: string
+}

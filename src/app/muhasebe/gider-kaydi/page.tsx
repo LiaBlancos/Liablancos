@@ -6,10 +6,10 @@ import HizliFisModal from '@/components/HizliFisModal'
 import DetayliFisModal from '@/components/DetayliFisModal'
 import CategoryTag from '@/components/CategoryTag'
 import { GIDER_KATEGORILERI, ETIKETLER } from '@/lib/constants'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, normalizeTurkish } from '@/lib/utils'
 import DigerGiderModal from '@/components/DigerGiderModal'
 
-import { getExpenses, saveExpense, deleteExpense as apiDeleteExpense } from '@/lib/actions'
+import { getExpenses, saveExpense, deleteExpense as apiDeleteExpense, bulkSaveExpenses, getExpenseRules } from '@/lib/actions'
 import { toast } from 'sonner'
 
 interface GiderKaydi {
@@ -29,6 +29,7 @@ interface GiderKaydi {
   lineItems?: any[]
   stokTakipli?: boolean
   islemNo?: string
+  aciklama?: string
   createdAt: string
 }
 
@@ -77,6 +78,91 @@ export default function GiderKaydiPage() {
     } catch (error: any) {
       toast.error('Hata: ' + error.message)
       throw error // Hatayı fırlat ki Modal bunu anlasın
+    }
+  }
+
+  const handleBulkSave = async (dataList: any[]) => {
+    try {
+      const result = await bulkSaveExpenses(dataList)
+      if (result.success) {
+        toast.success(`${dataList.length} kayıt işlendi`)
+        fetchExpenses()
+        setIsDigerOpen(false)
+        return { success: true }
+      }
+    } catch (error: any) {
+      toast.error('Hata: ' + error.message)
+      throw error
+    }
+  }
+
+  const handleApplyRules = async () => {
+    setLoading(true)
+    try {
+      const rules = await getExpenseRules()
+      if (!rules || rules.length === 0) {
+        toast.info('Henüz tanımlanmış bir kural yok.')
+        setLoading(false)
+        return
+      }
+
+      console.log(`[KURAL] ${rules.length} kural bulundu, ${records.length} kayıt kontrol ediliyor...`)
+      rules.forEach((r: any) => console.log(`[KURAL] Keyword: "${r.keyword}" → Kategori: "${r.category}"`))
+
+      let updatedCount = 0
+      const updatedRecords = []
+
+      for (const record of records) {
+        const rawStr = `${record.kayitIsmi || ''} ${record.tedarikci || ''} ${record.aciklama || ''}`
+        const searchStr = normalizeTurkish(rawStr)
+        
+        for (const rule of rules) {
+          const normalizedKeyword = normalizeTurkish(rule.keyword)
+          const isMatch = searchStr.includes(normalizedKeyword)
+          
+          if (isMatch) {
+            console.log(`[KURAL] ✓ EŞLEŞME: "${rawStr}" içinde "${rule.keyword}" bulundu. Mevcut kategori: "${record.giderKategorisi}" → Yeni: "${rule.category}", KDV: %${rule.kdv_orani || 0}`)
+            
+            const hasCategoryChange = record.giderKategorisi !== rule.category
+            const hasKdvChange = rule.kdv_orani && record.kdvOrani !== rule.kdv_orani
+
+            if (hasCategoryChange || hasKdvChange) {
+              const updatedData: any = { ...record }
+              if (hasCategoryChange) updatedData.giderKategorisi = rule.category
+              
+              if (hasKdvChange) {
+                const tutar = typeof record.toplamTutar === 'string' 
+                  ? parseFloat(record.toplamTutar.replace(/\./g, '').replace(',', '.')) 
+                  : Number(record.toplamTutar) || 0
+                
+                updatedData.kdvOrani = rule.kdv_orani
+                updatedData.toplamKdv = (tutar * rule.kdv_orani / (100 + rule.kdv_orani)).toFixed(2)
+              }
+              
+              updatedRecords.push(updatedData)
+              updatedCount++
+            } else {
+              console.log(`[KURAL] ⚠ Zaten aynı kategori ve KDV'de, güncelleme gerekmiyor.`)
+            }
+            break // İlk eşleşen kuralı uygula
+          }
+        }
+      }
+
+      if (updatedCount > 0) {
+        // saveExpense uses UPDATE when id exists, unlike bulkSaveExpenses which uses ignoreDuplicates
+        for (const rec of updatedRecords) {
+          await saveExpense(rec)
+        }
+        toast.success(`${updatedCount} adet kayıt kurallara göre güncellendi.`)
+        fetchExpenses()
+      } else {
+        toast.info('Kurallarla eşleşen yeni bir kategori değişikliği bulunamadı.')
+      }
+    } catch (error: any) {
+      toast.error('Hata: ' + error.message)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -173,6 +259,15 @@ export default function GiderKaydiPage() {
             DETAYLI FİŞ/FATURA
           </button>
           <button
+            onClick={handleApplyRules}
+            disabled={loading}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-[13px] tracking-wide transition-colors shadow-lg shadow-indigo-600/20"
+            title="Tüm kayıtları tanımladığınız akıllı kurallara göre otomatik kategorize eder."
+          >
+            {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <div className="w-2 h-2 bg-white rounded-full animate-pulse" />}
+            KURALLARI UYGULA
+          </button>
+          <button
             onClick={() => setIsDigerOpen(true)}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-[#8B7E6A] hover:bg-[#7A6D59] text-white rounded-xl font-bold text-[13px] tracking-wide transition-colors border-2 border-white/10 shadow-lg"
           >
@@ -204,9 +299,10 @@ export default function GiderKaydiPage() {
           {/* Table Header */}
           <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-slate-50 border-b border-slate-200/60 text-xs font-bold text-slate-500 uppercase tracking-wider">
             <div className="col-span-1"></div>
-            <div className="col-span-4">Kayıt İsmi</div>
-            <div className="col-span-3">Düzenlenme Tarihi</div>
-            <div className="col-span-4 text-right">Kalan Meblağ</div>
+            <div className="col-span-3">Kayıt İsmi</div>
+            <div className="col-span-2">Tarih</div>
+            <div className="col-span-3 text-center">KDV</div>
+            <div className="col-span-3 text-right">Tutar</div>
           </div>
 
           {/* Records */}
@@ -216,7 +312,24 @@ export default function GiderKaydiPage() {
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {filteredRecords.map((record, index) => (
+              {filteredRecords.map((record, index) => {
+                let tutar = 0
+                if (typeof record.toplamTutar === 'number') {
+                  tutar = record.toplamTutar
+                } else if (typeof record.toplamTutar === 'string') {
+                  // If it has a comma, it's likely Turkish format "1.234,56"
+                  if (record.toplamTutar.includes(',')) {
+                    tutar = parseFloat(record.toplamTutar.replace(/\./g, '').replace(',', '.'))
+                  } else {
+                    // It's likely a DB decimal format "1234.56"
+                    tutar = parseFloat(record.toplamTutar)
+                  }
+                }
+                
+                const kdvOrani = record.kdvOrani || 0
+                const kdvTutar = kdvOrani > 0 ? tutar * kdvOrani / (100 + kdvOrani) : 0
+
+                return (
                 <div
                   key={record.id}
                   className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-slate-50/50 transition-colors group items-center animate-fade-in"
@@ -230,7 +343,7 @@ export default function GiderKaydiPage() {
                   </div>
 
                   {/* Kayıt İsmi + Tags */}
-                  <div className="col-span-4">
+                  <div className="col-span-3">
                     <p className="text-sm font-semibold text-slate-800 truncate">{record.kayitIsmi || 'İsimsiz Kayıt'}</p>
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       {record.giderKategorisi && record.giderKategorisi !== 'Kategorisiz' && (
@@ -253,16 +366,51 @@ export default function GiderKaydiPage() {
                     </div>
                   </div>
 
-                  {/* Tarih + Tip */}
-                  <div className="col-span-3">
+                  {/* Tarih */}
+                  <div className="col-span-2">
                     <p className="text-sm text-slate-600">
-                      {new Date(record.tarih).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      {new Date(record.tarih).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </p>
                     <p className="text-xs text-slate-400 mt-0.5">Fiş / Fatura</p>
                   </div>
 
+                  {/* KDV Oranı + Hesaplama */}
+                  <div className="col-span-3">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={kdvOrani}
+                        onChange={async (e) => {
+                          const newRate = Number(e.target.value)
+                          const newKdv = newRate > 0 ? tutar * newRate / (100 + newRate) : 0
+                          try {
+                            await saveExpense({
+                              ...record,
+                              kdvOrani: newRate,
+                              toplamKdv: newKdv.toFixed(2)
+                            })
+                            fetchExpenses()
+                          } catch (err: any) {
+                            toast.error('KDV güncellenemedi: ' + err.message)
+                          }
+                        }}
+                        className="w-[72px] px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 outline-none transition-all appearance-none cursor-pointer hover:border-slate-300"
+                      >
+                        <option value={0}>%0</option>
+                        <option value={1}>%1</option>
+                        <option value={10}>%10</option>
+                        <option value={20}>%20</option>
+                      </select>
+                      {kdvOrani > 0 && (
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-tight">KDV</span>
+                          <span className="text-xs font-bold text-emerald-700">{formatCurrency(kdvTutar)} ₺</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Tutar + Ödeme Durumu */}
-                  <div className="col-span-4 text-right">
+                  <div className="col-span-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       {getOdemeBadge(record.odemeDurumu)}
                       <div className="opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1 ml-2">
@@ -281,11 +429,17 @@ export default function GiderKaydiPage() {
                       </div>
                     </div>
                     <p className="text-sm font-bold text-slate-800 mt-0.5">
-                      Genel Toplam {formatCurrency(record.toplamTutar)} {getCurrencySymbol(record.doviz)}
+                      {formatCurrency(record.toplamTutar)} {getCurrencySymbol(record.doviz)}
                     </p>
+                    {kdvOrani > 0 && (
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        KDV Hariç: {formatCurrency(tutar - kdvTutar)} {getCurrencySymbol(record.doviz)}
+                      </p>
+                    )}
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
@@ -303,7 +457,9 @@ export default function GiderKaydiPage() {
         isOpen={isDigerOpen}
         onClose={() => { setIsDigerOpen(false); setEditingRecord(null); }}
         onSave={handleSave}
+        onBulkSave={handleBulkSave}
         initialData={editingRecord}
+        existingRecords={records}
       />
 
       {/* DETAYLI FİŞ MODAL */}

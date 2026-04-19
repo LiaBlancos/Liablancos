@@ -54,7 +54,7 @@ export default function AppShell({ children }: AppShellProps) {
 
     // Auto-open menu if we are on a relevant page
     const stockHrefs = ['/stock-in', '/stock-out', '/inventory', '/low-stock', '/products/new', '/trendyol/limits', '/damaged-in', '/damaged-out', '/damaged-stock']
-    const shippingHrefs = ['/shipping/orders', '/shipping/delivered', '/shipping/in-transit', '/shipping/delayed', '/shipping/returns']
+    const shippingHrefs = ['/shipping/all-orders', '/shipping/orders', '/shipping/delivered', '/shipping/in-transit', '/shipping/delayed', '/shipping/returns']
     const isCurrentlyOnStockPage = stockHrefs.includes(pathname)
     const isCurrentlyOnShippingPage = shippingHrefs.includes(pathname)
 
@@ -110,6 +110,7 @@ export default function AppShell({ children }: AppShellProps) {
     ]
 
     const shippingNavigation = [
+        { name: 'Tüm Siparişler', href: '/shipping/all-orders', icon: Package },
         { name: 'Gelen Siparişler', href: '/shipping/orders', icon: ShoppingBag },
         { name: 'Yolda Olanlar', href: '/shipping/in-transit', icon: Truck },
         { name: 'Gecikenler', href: '/shipping/delayed', icon: Timer },

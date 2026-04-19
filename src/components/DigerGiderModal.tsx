@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { X, CheckCircle2, DollarSign, Calendar, FileText, Upload, Landmark, Megaphone, FileSpreadsheet, Loader2 } from 'lucide-react'
 import { GIDER_KATEGORILERI, ETIKETLER } from '@/lib/constants'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, normalizeTurkish } from '@/lib/utils'
 import * as XLSX from 'xlsx'
 import { toast } from 'sonner'
 import { getExpenseRules } from '@/lib/actions'
@@ -12,12 +12,14 @@ interface DigerGiderModalProps {
   isOpen: boolean
   onClose: () => void
   onSave: (data: any) => Promise<any>
+  onBulkSave?: (dataList: any[]) => Promise<any>
   initialData?: any
+  existingRecords?: any[]
 }
 
 type ViewMode = 'selection' | 'form' | 'excel'
 
-export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }: DigerGiderModalProps) {
+export default function DigerGiderModal({ isOpen, onClose, onSave, onBulkSave, initialData, existingRecords }: DigerGiderModalProps) {
   const [view, setView] = useState<ViewMode>('selection')
   const [loading, setLoading] = useState(false)
   const [rules, setRules] = useState<any[]>([])
@@ -142,6 +144,8 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
         // Process each row
         let successCount = 0
         let errorCount = 0
+        let skippedCount = 0
+        const recordsToSave: any[] = []
         
         for (const row of rows) {
           try {
@@ -182,6 +186,13 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
             const description = row[colMap['aciklama']] || ''
             const transactionType = row[colMap['islem']] || ''
             const islemNo = row[colMap['islemNo']]?.toString() || ''
+            
+            // Mükerrer Kayıt Kontrolü: Eğer islemNo zaten varsa ve boş değilse atla
+            if (islemNo && existingRecords?.some(r => r.islemNo === islemNo)) {
+              skippedCount++
+              continue
+            }
+
             let extractedName = transactionType
             
             if (description) {
@@ -195,22 +206,21 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
 
             // Dynamic Category Mapping
             let autoCategory = formData.giderKategorisi || 'DİĞER GİDERLER'
+            let autoKdvRate = 0
+            let autoKdvAmount = '0'
             
-            // Normalize for Turkish character insensitive comparison
-            const normalize = (str: string) => 
-              str.replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase()
-                 .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-
-            const searchStr = normalize(extractedName + ' ' + description + ' ' + transactionType)
+            const searchStr = normalizeTurkish(extractedName + ' ' + description + ' ' + transactionType)
             
             // 1. Check user-defined rules from settings
-            const matchingRule = rules.find(r => searchStr.includes(normalize(r.keyword)))
+            const matchingRule = rules.find(r => searchStr.includes(normalizeTurkish(r.keyword)))
             
             if (matchingRule) {
               autoCategory = matchingRule.category
+              if (matchingRule.kdv_orani) {
+                autoKdvRate = matchingRule.kdv_orani
+                autoKdvAmount = (cleanTutar * autoKdvRate / (100 + autoKdvRate)).toFixed(2)
+              }
             }
-            // Artık varsayılan (hardcoded) eşleştirmeler kaldırıldı. 
-            // Sadece Ayarlar sayfasında tanımladıklarınız çalışır.
 
             const record = {
               kayitIsmi: extractedName || 'Banka Gideri',
@@ -221,28 +231,44 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, initialData }
               odemeDurumu: 'odendi',
               giderKategorisi: autoCategory,
               etiket: formData.etiket || 'Banka',
-              toplamKdv: '0',
-              kdvOrani: 0,
-              islemNo: islemNo
+              toplamKdv: autoKdvAmount.replace('.', ','),
+              kdvOrani: autoKdvRate,
+              stokTakipli: false,
+              islemNo: islemNo,
+              aciklama: description
             }
             
-            await onSave(record)
+            recordsToSave.push(record)
             successCount++
           } catch (err) {
-            console.error('Row save error:', err)
+            console.error('Row process error:', err)
             errorCount++
           }
         }
 
-        if (errorCount > 0) {
-          toast.warning(`${successCount} adet başarıyla eklendi, ${errorCount} adet hata oluştu.`)
+        if (recordsToSave.length > 0) {
+          if (onBulkSave) {
+            await onBulkSave(recordsToSave)
+          } else {
+            // Fallback if onBulkSave not provided
+            for (const r of recordsToSave) {
+              await onSave(r)
+            }
+          }
+        }
+
+        if (errorCount > 0 || skippedCount > 0) {
+          let msg = `${successCount} adet başarıyla eklendi.`
+          if (skippedCount > 0) msg += ` ${skippedCount} adet mükerrer kayıt atlandı.`
+          if (errorCount > 0) msg += ` ${errorCount} adet hata oluştu.`
+          toast.warning(msg)
         } else {
           toast.success(`${successCount} adet gider başarıyla aktarıldı.`)
         }
         onClose()
-      } catch (err) {
+      } catch (err: any) {
         console.error('Excel parse error:', err)
-        toast.error('Excel okunurken bir hata oluştu. Lütfen formatı kontrol edin.')
+        toast.error('Excel okunurken hata oluştu: ' + (err.message || 'Bilinmeyen hata'))
       } finally {
         setLoading(false)
         if (fileInputRef.current) fileInputRef.current.value = ''

@@ -18,3 +18,8 @@ export function formatCurrency(value: string | number | undefined) {
     maximumFractionDigits: 2
   }).format(num);
 }
+export function normalizeTurkish(str: string) {
+  if (!str) return '';
+  return str.replace(/İ/g, 'i').replace(/I/g, 'ı').toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
