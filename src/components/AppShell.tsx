@@ -138,6 +138,7 @@ export default function AppShell({ children }: AppShellProps) {
     ]
 
     const accountingNavigation = [
+        { name: 'Gelir Kaydı', href: '/muhasebe/gelir-kaydi', icon: TrendingUp },
         { name: 'Gider Kaydı', href: '/muhasebe/gider-kaydi', icon: PlusSquare },
         { name: 'Gider Listesi', href: '/muhasebe/gider-listesi', icon: Receipt },
         { name: 'Giderler Raporu', href: '/muhasebe/giderler-raporu', icon: FileBarChart },

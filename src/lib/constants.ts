@@ -52,3 +52,12 @@ export const SATIS_KATEGORILERI = [
   { text: 'İADE / İPTAL', color: 'red' },
   { text: 'TRENDYOL SATIŞ GELİRİ', color: 'blue' },
 ] as const;
+
+export const GELIR_KATEGORILERI = [
+  { text: 'SATIŞ GELİRİ', color: 'green' },
+  { text: 'HİZMET GELİRİ', color: 'blue' },
+  { text: 'İADE / İPTAL', color: 'red' },
+  { text: 'KOMİSYON GELİRİ', color: 'orange' },
+  { text: 'TRENDYOL SATIŞ GELİRİ', color: 'cyan' },
+  { text: 'DİĞER GELİRLER', color: 'purple' },
+] as const;
