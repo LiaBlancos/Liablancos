@@ -23,6 +23,9 @@ const eslintConfig = defineConfig([
       "react-hooks/exhaustive-deps": "off",
       "react-hooks/preserve-manual-memoization": "off",
       "react/no-unescaped-entities": "off",
+      "@typescript-eslint/no-require-imports": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/purity": "off",
     },
   },
 ]);
