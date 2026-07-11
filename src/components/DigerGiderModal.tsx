@@ -44,7 +44,7 @@ export default function DigerGiderModal({ isOpen, onClose, onSave, onBulkSave, i
       if (initialData) {
         setFormData({
           ...initialData,
-          toplamTutar: initialData.toplamTutar.toString().replace('.', ','),
+          toplamTutar: initialData.toplamTutar?.toString().replace('.', ',') || '0',
           toplamKdv: initialData.toplamKdv?.toString().replace('.', ',') || '0'
         })
         setView('form')
