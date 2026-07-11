@@ -2391,6 +2391,38 @@ export async function deleteExpense(id: string) {
     return { success: true }
 }
 
+export async function bulkDeleteExpenses(ids: string[]) {
+    const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .in('id', ids)
+
+    if (error) {
+        console.error('Error bulk deleting expenses:', error)
+        throw new Error(error.message)
+    }
+
+    revalidatePath('/muhasebe/gider-kaydi')
+    revalidatePath('/muhasebe/gider-listesi')
+    return { success: true }
+}
+
+export async function bulkUpdateExpenseStatus(ids: string[], status: string) {
+    const { error } = await supabase
+        .from('expenses')
+        .update({ odeme_durumu: status })
+        .in('id', ids)
+
+    if (error) {
+        console.error('Error bulk updating expense status:', error)
+        throw new Error(error.message)
+    }
+
+    revalidatePath('/muhasebe/gider-kaydi')
+    revalidatePath('/muhasebe/gider-listesi')
+    return { success: true }
+}
+
 // --- EXPENSE RULES (OTOMATIK KATEGORI) ---
 
 export async function getExpenseRules() {
