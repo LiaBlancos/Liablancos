@@ -141,7 +141,6 @@ export default function AppShell({ children }: AppShellProps) {
         { name: 'Gelir Kaydı', href: '/muhasebe/gelir-kaydi', icon: TrendingUp },
         { name: 'Gider Kaydı', href: '/muhasebe/gider-kaydi', icon: PlusSquare },
         { name: 'Gider Listesi', href: '/muhasebe/gider-listesi', icon: Receipt },
-        { name: 'Giderler Raporu', href: '/muhasebe/giderler-raporu', icon: FileBarChart },
         { name: 'Ödemeler Raporu', href: '/muhasebe/odemeler-raporu', icon: CreditCard },
         { name: 'KDV Raporu', href: '/muhasebe/kdv-raporu', icon: Coins },
     ]
