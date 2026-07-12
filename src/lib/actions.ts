@@ -868,7 +868,7 @@ export async function getTrendyolOrders(
     const apiSecret = settings.find(s => s.key === 'trendyol_api_secret')?.value?.trim()
 
     if (!sellerId || !apiKey || !apiSecret) {
-        console.error('[Trendyol API] Credentials missing in settings table!', { sellerId: !!sellerId, apiKey: !!apiKey, apiSecret: !!apiSecret })
+        console.warn('[Trendyol API] Credentials missing in settings table. Skipping Trendyol fetch.');
         return { error: 'Trendyol API bilgileri eksik.' }
     }
 
