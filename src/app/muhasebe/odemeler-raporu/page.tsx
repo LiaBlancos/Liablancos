@@ -1,26 +1,24 @@
-'use client';
-import { CreditCard } from 'lucide-react';
-export default function Page() {
+import { getIncomes, getExpenses, getTrendyolOrders, getLowStockProducts } from '@/lib/actions';
+import OdemelerRaporuContent from '@/components/OdemelerRaporuDashboard';
+
+export const dynamic = 'force-dynamic';
+
+export default async function Page() {
+  const [incomes, expenses, trendyolOrdersData, lowStockProducts] = await Promise.all([
+    getIncomes(),
+    getExpenses(),
+    getTrendyolOrders(0, 1000), // Get recent orders to analyze statuses
+    getLowStockProducts()
+  ]);
+
+  const trendyolOrders = trendyolOrdersData?.content || [];
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center">
-          <CreditCard className="w-6 h-6 text-indigo-500" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Âdemeler Raporu</h1>
-          <p className="text-slate-500 text-sm">Yapılan tüm ödemelerin raporunu inceleyin.</p>
-        </div>
-      </div>
-      <div className="bg-white rounded-3xl border border-slate-200/60 p-8 shadow-sm">
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="w-20 h-20 rounded-full bg-slate-50 flex items-center justify-center mb-4">
-            <CreditCard className="w-10 h-10 text-slate-300" />
-          </div>
-          <h2 className="text-xl font-semibold text-slate-800 mb-2">Âdemeler Raporu Modülü</h2>
-          <p className="text-slate-500 max-w-sm">Bu bölüm şu anda yapım aşamasındadır.</p>
-        </div>
-      </div>
-    </div>
+    <OdemelerRaporuContent 
+      incomes={incomes}
+      expenses={expenses}
+      trendyolOrders={trendyolOrders}
+      lowStockProducts={lowStockProducts}
+    />
   );
 }
