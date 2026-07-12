@@ -150,6 +150,110 @@ export default function GelirKaydiPage() {
     }
   }
 
+  const handleTrendyolOdemeExcel = async (file: File) => {
+    const toastId = toast.loading('Trendyol Ödeme Exceli okunuyor...')
+    try {
+      const buffer = await file.arrayBuffer()
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      
+      // Parse all rows
+      const rawRows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+
+      // Find header row
+      let headerRowIdx = -1
+      for (let i = 0; i < Math.min(rawRows.length, 20); i++) {
+        const row = rawRows[i]
+        if (!row || !Array.isArray(row)) continue
+        const joined = row.map((c: any) => String(c || '')).toLowerCase()
+        if (joined.includes('sipariş') || joined.includes('tutar') || joined.includes('komisyon')) {
+          headerRowIdx = i
+          break
+        }
+      }
+
+      if (headerRowIdx === -1) {
+        toast.error('Excel başlık satırı bulunamadı.', { id: toastId })
+        return
+      }
+
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet, { range: headerRowIdx })
+      if (rows.length === 0) {
+        toast.error('Dosya boş.', { id: toastId })
+        return
+      }
+
+      const parseTRNumber = (val: any) => {
+        if (!val) return 0
+        if (typeof val === 'number') return val
+        const s = String(val).replace(/[^0-9,\.-]/g, '')
+        if (s.includes(',') && s.includes('.')) {
+          return parseFloat(s.replace(/\./g, '').replace(',', '.'))
+        }
+        if (s.includes(',')) {
+          return parseFloat(s.replace(',', '.'))
+        }
+        return parseFloat(s) || 0
+      }
+
+      const invoices: any[] = []
+      
+      for (const row of rows) {
+        const siparisNo = row['Sipariş No'] || row['Alt Sipariş No'] || row['Sipariş Numarası'] || row['Paket No']
+        if (!siparisNo) continue
+
+        const netHakedis = parseTRNumber(row['Satıcı Hakediş'] || row['Net Tutar'] || row['Net Hakediş'] || row['Tahsilat Tutarı'] || 0)
+        
+        // Sadece pozitif hakedişleri gelir olarak ekle
+        if (netHakedis <= 0) continue
+
+        let islemTarihi = new Date().toISOString().split('T')[0]
+        const rawTarih = row['İşlem Tarihi'] || row['Vade Tarihi'] || row['Tarih']
+        if (rawTarih) {
+          if (typeof rawTarih === 'number') {
+             const d = XLSX.SSF.parse_date_code(rawTarih)
+             islemTarihi = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
+          } else {
+             // Try to parse DD.MM.YYYY
+             const parts = String(rawTarih).split(/[\.\/]/)
+             if (parts.length === 3) {
+               islemTarihi = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+             }
+          }
+        }
+
+        invoices.push({
+          kayitIsmi: `Trendyol Tahsilat - ${siparisNo}`,
+          musteri: 'Trendyol',
+          tarih: islemTarihi,
+          toplamTutar: netHakedis.toFixed(2),
+          doviz: 'TRY',
+          toplamKdv: 0,
+          kdvOrani: 0,
+          tahsilatDurumu: 'tahsil_edildi', // Ödeme exceli olduğu için direkt tahsil edildi diyoruz
+          gelirKategorisi: 'Pazaryeri Satış',
+          etiket: 'Trendyol',
+          fisNo: String(siparisNo),
+          aciklama: `Trendyol Ödeme/Tahsilat Raporundan otomatik aktarıldı. Sipariş: ${siparisNo}`
+        })
+      }
+
+      if (invoices.length === 0) {
+        toast.error('Yüklenecek geçerli ödeme bulunamadı (Tüm tutarlar 0 veya eksi olabilir).', { id: toastId })
+        return
+      }
+
+      toast.loading(`${invoices.length} Trendyol tahsilatı kaydediliyor...`, { id: toastId })
+      await bulkSaveIncomes(invoices)
+      toast.success(`${invoices.length} Trendyol tahsilatı başarıyla eklendi!`, { id: toastId })
+      fetchExpenses()
+
+    } catch (err: any) {
+      console.error(err)
+      toast.error('Hata: ' + err.message, { id: toastId })
+    }
+  }
+
   // --- SİPARİŞ FATURA (EXCEL) İşleyicisi ---
   const handleSiparisExcel = async (file: File) => {
     const toastId = toast.loading('Excel dosyası okunuyor...')
@@ -465,7 +569,8 @@ export default function GelirKaydiPage() {
           <label className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold text-[13px] tracking-wide transition-colors cursor-pointer shadow-sm">
             <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => {
               if (e.target.files && e.target.files.length > 0) {
-                toast.success('Trendyol Ödeme Exceli okundu. (Yapım aşamasında)');
+                handleTrendyolOdemeExcel(e.target.files[0])
+                e.target.value = ''
               }
             }} />
             TRENDYOL ÖDEME EXCELİ
