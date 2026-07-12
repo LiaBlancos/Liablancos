@@ -153,8 +153,15 @@ export default function GelirKaydiPage() {
   const handleTrendyolOdemeExcel = async (file: File) => {
     const toastId = toast.loading('Trendyol Ödeme Exceli okunuyor...')
     try {
-      const buffer = await file.arrayBuffer()
-      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' })
+      let workbook
+      try {
+        const buffer = await file.arrayBuffer()
+        workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' })
+      } catch (err: any) {
+        console.warn('Excel binary read failed, falling back to text read:', err)
+        const text = await file.text()
+        workbook = XLSX.read(text, { type: 'string' })
+      }
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       
       // Parse all rows
@@ -258,8 +265,15 @@ export default function GelirKaydiPage() {
   const handleSiparisExcel = async (file: File) => {
     const toastId = toast.loading('Excel dosyası okunuyor...')
     try {
-      const buffer = await file.arrayBuffer()
-      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' })
+      let workbook
+      try {
+        const buffer = await file.arrayBuffer()
+        workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' })
+      } catch (err: any) {
+        console.warn('Excel binary read failed, falling back to text read:', err)
+        const text = await file.text()
+        workbook = XLSX.read(text, { type: 'string' })
+      }
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
 
       // First, read all rows as raw arrays to find the header row
